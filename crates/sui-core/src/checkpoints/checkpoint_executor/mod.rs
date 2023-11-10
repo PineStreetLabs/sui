@@ -56,7 +56,7 @@ use crate::transaction_manager::TransactionManager;
 use crate::{authority::EffectsNotifyRead, checkpoints::CheckpointStore};
 
 use self::metrics::CheckpointExecutorMetrics;
-
+use sui_types::error::SuiError;
 mod metrics;
 #[cfg(test)]
 pub(crate) mod tests;
@@ -429,7 +429,7 @@ impl CheckpointExecutor {
             .authority_store
             .perpetual_tables
             .effects
-            .multi_get(shared_effects_digests.clone())?
+            .multi_get(shared_effects_digests.clone()).map_err(|_| SuiError::StorageError)?
             .into_iter()
             .zip(shared_effects_digests)
             .map(|(fx, fx_digest)| {

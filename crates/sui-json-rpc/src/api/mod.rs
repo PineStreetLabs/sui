@@ -27,7 +27,6 @@ pub use read::ReadApiServer;
 pub use transaction_builder::TransactionBuilderClient;
 pub use transaction_builder::TransactionBuilderOpenRpc;
 pub use transaction_builder::TransactionBuilderServer;
-use typed_store::rocks::read_size_from_env;
 pub use write::WriteApiClient;
 pub use write::WriteApiOpenRpc;
 pub use write::WriteApiServer;
@@ -41,12 +40,9 @@ mod read;
 mod transaction_builder;
 mod write;
 
-const RPC_QUERY_MAX_RESULT_LIMIT: &str = "RPC_QUERY_MAX_RESULT_LIMIT";
 const DEFAULT_RPC_QUERY_MAX_RESULT_LIMIT: usize = 50;
 
-pub static QUERY_MAX_RESULT_LIMIT: Lazy<usize> = Lazy::new(|| {
-    read_size_from_env(RPC_QUERY_MAX_RESULT_LIMIT).unwrap_or(DEFAULT_RPC_QUERY_MAX_RESULT_LIMIT)
-});
+pub static QUERY_MAX_RESULT_LIMIT: Lazy<usize> = Lazy::new(|| DEFAULT_RPC_QUERY_MAX_RESULT_LIMIT);
 
 // TODOD(chris): make this configurable
 pub const QUERY_MAX_RESULT_LIMIT_CHECKPOINTS: usize = 100;

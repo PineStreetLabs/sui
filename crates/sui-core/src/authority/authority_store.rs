@@ -166,7 +166,7 @@ impl AuthorityStore {
             info!("Loading epoch start config from DB");
             perpetual_tables
                 .epoch_start_configuration
-                .get(&())?
+                .get(&()).map_err(|_| SuiError::StorageError)?
                 .expect("Epoch start configuration must be set in non-empty DB")
         };
         let cur_epoch = perpetual_tables.get_recovery_epoch_at_restart()?;
@@ -290,7 +290,7 @@ impl AuthorityStore {
         let acc = self
             .perpetual_tables
             .root_state_hash_by_epoch
-            .get(&epoch)?
+            .get(&epoch).map_err(|_| SuiError::StorageError)?
             .expect("Root state hash for this epoch does not exist");
         Ok(acc.1.digest().into())
     }
@@ -314,7 +314,7 @@ impl AuthorityStore {
         &self,
         effects_digest: &TransactionEffectsDigest,
     ) -> SuiResult<Option<TransactionEffects>> {
-        Ok(self.perpetual_tables.effects.get(effects_digest)?)
+        Ok(self.perpetual_tables.effects.get(effects_digest).map_err(|_| SuiError::StorageError)?)
     }
 
     /// Returns true if we have an effects structure for this transaction digest
@@ -322,7 +322,7 @@ impl AuthorityStore {
         self.perpetual_tables
             .effects
             .contains_key(effects_digest)
-            .map_err(|e| e.into())
+            .map_err(|_| SuiError::StorageError)
     }
 
     pub(crate) fn get_events(
@@ -345,23 +345,23 @@ impl AuthorityStore {
         Ok(event_digests
             .iter()
             .map(|digest| self.get_events(digest))
-            .collect::<Result<Vec<_>, _>>()?)
+            .collect::<Result<Vec<_>, _>>().map_err(|_| SuiError::StorageError)?)
     }
 
     pub fn multi_get_effects<'a>(
         &self,
         effects_digests: impl Iterator<Item = &'a TransactionEffectsDigest>,
     ) -> SuiResult<Vec<Option<TransactionEffects>>> {
-        Ok(self.perpetual_tables.effects.multi_get(effects_digests)?)
+        Ok(self.perpetual_tables.effects.multi_get(effects_digests).map_err(|_| SuiError::StorageError)?)
     }
 
     pub fn get_executed_effects(
         &self,
         tx_digest: &TransactionDigest,
     ) -> SuiResult<Option<TransactionEffects>> {
-        let effects_digest = self.perpetual_tables.executed_effects.get(tx_digest)?;
+        let effects_digest = self.perpetual_tables.executed_effects.get(tx_digest).map_err(|_| SuiError::StorageError)?;
         match effects_digest {
-            Some(digest) => Ok(self.perpetual_tables.effects.get(&digest)?),
+            Some(digest) => Ok(self.perpetual_tables.effects.get(&digest).map_err(|_| SuiError::StorageError)?),
             None => Ok(None),
         }
     }
@@ -372,7 +372,7 @@ impl AuthorityStore {
         &self,
         digests: &[TransactionDigest],
     ) -> SuiResult<Vec<Option<TransactionEffectsDigest>>> {
-        Ok(self.perpetual_tables.executed_effects.multi_get(digests)?)
+        Ok(self.perpetual_tables.executed_effects.multi_get(digests).map_err(|_| SuiError::StorageError)?)
     }
 
     /// Given a list of transaction digests, returns a list of the corresponding effects only if they have been
@@ -381,7 +381,7 @@ impl AuthorityStore {
         &self,
         digests: &[TransactionDigest],
     ) -> SuiResult<Vec<Option<TransactionEffects>>> {
-        let executed_effects_digests = self.perpetual_tables.executed_effects.multi_get(digests)?;
+        let executed_effects_digests = self.perpetual_tables.executed_effects.multi_get(digests).map_err(|_| SuiError::StorageError)?;
         let effects = self.multi_get_effects(executed_effects_digests.iter().flatten())?;
         let mut tx_to_effects_map = effects
             .into_iter()
@@ -398,7 +398,7 @@ impl AuthorityStore {
         Ok(self
             .perpetual_tables
             .executed_effects
-            .contains_key(digest)?)
+            .contains_key(digest).map_err(|_| SuiError::StorageError)?)
     }
 
     /// Returns future containing the state hash for the given epoch
@@ -409,7 +409,7 @@ impl AuthorityStore {
     ) -> SuiResult<(CheckpointSequenceNumber, Accumulator)> {
         // We need to register waiters _before_ reading from the database to avoid race conditions
         let registration = self.root_state_notify_read.register_one(&epoch);
-        let hash = self.perpetual_tables.root_state_hash_by_epoch.get(&epoch)?;
+        let hash = self.perpetual_tables.root_state_hash_by_epoch.get(&epoch).map_err(|_| SuiError::StorageError)?;
 
         let result = match hash {
             // Note that Some() clause also drops registration that is already fulfilled
@@ -435,8 +435,8 @@ impl AuthorityStore {
         batch.insert_batch(
             &self.perpetual_tables.executed_transactions_to_checkpoint,
             digests.iter().map(|d| (*d, (epoch, sequence))),
-        )?;
-        batch.write()?;
+        ).map_err(|_| SuiError::StorageError)?;
+        batch.write().map_err(|_| SuiError::StorageError)?;
         trace!("Transactions {digests:?} finalized at checkpoint {sequence} epoch {epoch}");
         Ok(())
     }
@@ -449,7 +449,7 @@ impl AuthorityStore {
         Ok(self
             .perpetual_tables
             .executed_transactions_to_checkpoint
-            .contains_key(digest)?)
+            .contains_key(digest).map_err(|_| SuiError::StorageError)?)
     }
 
     // DEPRECATED -- use function of same name in AuthorityPerEpochStore
@@ -460,7 +460,7 @@ impl AuthorityStore {
         Ok(self
             .perpetual_tables
             .executed_transactions_to_checkpoint
-            .get(digest)?)
+            .get(digest).map_err(|_| SuiError::StorageError)?)
     }
 
     // DEPRECATED -- use function of same name in AuthorityPerEpochStore
@@ -471,7 +471,7 @@ impl AuthorityStore {
         Ok(self
             .perpetual_tables
             .executed_transactions_to_checkpoint
-            .multi_get(digests)?
+            .multi_get(digests).map_err(|_| SuiError::StorageError)?
             .into_iter()
             .collect())
     }
@@ -500,7 +500,7 @@ impl AuthorityStore {
             .perpetual_tables
             .objects
             .unbounded_iter()
-            .skip_prior_to(&ObjectKey(*object_id, prior_version))?;
+            .skip_prior_to(&ObjectKey(*object_id, prior_version)).map_err(|_| SuiError::StorageError)?;
 
         if let Some((object_key, value)) = iterator.next() {
             if object_key.0 == *object_id {
@@ -519,7 +519,7 @@ impl AuthorityStore {
         let wrappers = self
             .perpetual_tables
             .objects
-            .multi_get(object_keys.to_vec())?;
+            .multi_get(object_keys.to_vec()).map_err(|_| SuiError::StorageError)?;
         let mut ret = vec![];
 
         for (idx, w) in wrappers.into_iter().enumerate() {
@@ -551,7 +551,7 @@ impl AuthorityStore {
         Ok(self
             .perpetual_tables
             .object_per_epoch_marker_table
-            .get(&marker_key)?
+            .get(&marker_key).map_err(|_| SuiError::StorageError)?
             .is_some_and(|marker_value| marker_value == MarkerValue::Received))
     }
 
@@ -570,7 +570,7 @@ impl AuthorityStore {
             .perpetual_tables
             .object_per_epoch_marker_table
             .unbounded_iter()
-            .skip_prior_to(&marker_key)?
+            .skip_prior_to(&marker_key).map_err(|_| SuiError::StorageError)?
             .next();
         match marker_entry {
             Some(((epoch, key), marker)) => {
@@ -657,7 +657,7 @@ impl AuthorityStore {
                     keys_with_version
                         .iter()
                         .map(|(_, k)| ObjectKey(k.id(), k.version().unwrap())),
-                )?
+                ).map_err(|_| SuiError::StorageError)?
                 .into_iter(),
         ) {
             // If the key exists at the specified version, then the object is available.
@@ -751,12 +751,12 @@ impl AuthorityStore {
         write_batch.insert_batch(
             &self.perpetual_tables.objects,
             std::iter::once((ObjectKey::from(object_ref), store_object)),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         if let Some(indirect_obj) = indirect_object {
             write_batch.insert_batch(
                 &self.perpetual_tables.indirect_move_objects,
                 std::iter::once((indirect_obj.inner().digest(), indirect_obj)),
-            )?;
+            ).map_err(|_| SuiError::StorageError)?;
         }
 
         // Update the index
@@ -767,7 +767,7 @@ impl AuthorityStore {
             }
         }
 
-        write_batch.write()?;
+        write_batch.write().map_err(|_| SuiError::StorageError)?;
 
         Ok(())
     }
@@ -794,7 +794,7 @@ impl AuthorityStore {
                         get_store_object_pair((**o).clone(), self.indirect_objects_threshold).0,
                     )
                 }),
-            )?
+            ).map_err(|_| SuiError::StorageError)?
             .insert_batch(
                 &self.perpetual_tables.indirect_move_objects,
                 ref_and_objects.iter().filter_map(|(_, o)| {
@@ -802,7 +802,7 @@ impl AuthorityStore {
                         get_store_object_pair((**o).clone(), self.indirect_objects_threshold);
                     indirect_object.map(|obj| (obj.inner().digest(), obj))
                 }),
-            )?;
+            ).map_err(|_| SuiError::StorageError)?;
 
         let non_child_object_refs: Vec<_> = ref_and_objects
             .iter()
@@ -816,7 +816,7 @@ impl AuthorityStore {
             false, // is_force_reset
         )?;
 
-        batch.write()?;
+        batch.write().map_err(|_| SuiError::StorageError)?;
 
         Ok(())
     }
@@ -841,12 +841,12 @@ impl AuthorityStore {
                             ObjectKey::from(object.compute_object_reference()),
                             store_object_wrapper,
                         )),
-                    )?;
+                    ).map_err(|_| SuiError::StorageError)?;
                     if let Some(indirect_object) = indirect_object {
                         batch.merge_batch(
                             &perpetual_db.indirect_move_objects,
                             iter::once((indirect_object.inner().digest(), indirect_object)),
-                        )?;
+                        ).map_err(|_| SuiError::StorageError)?;
                     }
                     if !object.is_child_object() {
                         Self::initialize_locks(
@@ -864,7 +864,7 @@ impl AuthorityStore {
                             object_key,
                             StoreObject::Wrapped.into(),
                         )),
-                    )?;
+                    ).map_err(|_| SuiError::StorageError)?;
                 }
             }
         }
@@ -872,7 +872,7 @@ impl AuthorityStore {
         if *expected_sha3_digest != sha3_digest {
             return Err(SuiError::from("Sha does not match"));
         }
-        batch.write()?;
+        batch.write().map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -887,7 +887,7 @@ impl AuthorityStore {
     }
 
     pub fn get_epoch_start_configuration(&self) -> SuiResult<Option<EpochStartConfiguration>> {
-        Ok(self.perpetual_tables.epoch_start_configuration.get(&())?)
+        Ok(self.perpetual_tables.epoch_start_configuration.get(&()).map_err(|_| SuiError::StorageError)?)
     }
 
     /// Updates the state resulting from the execution of a certificate.
@@ -913,7 +913,7 @@ impl AuthorityStore {
         write_batch.insert_batch(
             &self.perpetual_tables.transactions,
             iter::once((transaction_digest, transaction.serializable_ref())),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         // Add batched writes for objects and locks.
         let effects_digest = effects.digest();
@@ -931,17 +931,17 @@ impl AuthorityStore {
         // batch_update_objects), as effects_exists is used as a check in many places
         // for "did the tx finish".
         write_batch
-            .insert_batch(&self.perpetual_tables.effects, [(effects_digest, effects)])?
+            .insert_batch(&self.perpetual_tables.effects, [(effects_digest, effects)]).map_err(|_| SuiError::StorageError)?
             .insert_batch(
                 &self.perpetual_tables.executed_effects,
                 [(transaction_digest, effects_digest)],
-            )?;
+            ).map_err(|_| SuiError::StorageError)?;
 
         // test crashing before writing the batch
         fail_point_async!("crash");
 
         // Commit.
-        write_batch.write()?;
+        write_batch.write().map_err(|_| SuiError::StorageError)?;
 
         // test crashing before notifying
         fail_point_async!("crash");
@@ -1045,7 +1045,7 @@ impl AuthorityStore {
         write_batch.insert_batch(
             &self.perpetual_tables.object_per_epoch_marker_table,
             markers_to_place,
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         let owned_inputs: Vec<_> = mutable_inputs
             .into_iter()
@@ -1071,7 +1071,7 @@ impl AuthorityStore {
                     StoreObjectWrapper::from(store_object),
                 )
             });
-        write_batch.insert_batch(&self.perpetual_tables.objects, tombstones)?;
+        write_batch.insert_batch(&self.perpetual_tables.objects, tombstones).map_err(|_| SuiError::StorageError)?;
 
         // Insert each output object into the stores
         let (new_objects, new_indirect_move_objects): (Vec<_>, Vec<_>) = written
@@ -1092,7 +1092,7 @@ impl AuthorityStore {
         let existing_digests = self
             .perpetual_tables
             .indirect_move_objects
-            .multi_get_raw_bytes(indirect_objects.iter().map(|(digest, _)| digest))?;
+            .multi_get_raw_bytes(indirect_objects.iter().map(|(digest, _)| digest)).map_err(|_| SuiError::StorageError)?;
         // split updates to existing and new indirect objects
         // for new objects full merge needs to be triggered. For existing ref count increment is sufficient
         let (existing_indirect_objects, new_indirect_objects): (Vec<_>, Vec<_>) = indirect_objects
@@ -1100,12 +1100,12 @@ impl AuthorityStore {
             .enumerate()
             .partition(|(idx, _)| matches!(&existing_digests[*idx], Some(value) if !is_ref_count_value(value)));
 
-        write_batch.insert_batch(&self.perpetual_tables.objects, new_objects.into_iter())?;
+        write_batch.insert_batch(&self.perpetual_tables.objects, new_objects.into_iter()).map_err(|_| SuiError::StorageError)?;
         if !new_indirect_objects.is_empty() {
             write_batch.merge_batch(
                 &self.perpetual_tables.indirect_move_objects,
                 new_indirect_objects.into_iter().map(|(_, pair)| pair),
-            )?;
+            ).map_err(|_| SuiError::StorageError)?;
         }
         if !existing_indirect_objects.is_empty() {
             write_batch.partial_merge_batch(
@@ -1113,7 +1113,7 @@ impl AuthorityStore {
                 existing_indirect_objects
                     .into_iter()
                     .map(|(_, (digest, _))| (digest, 1_u64.to_le_bytes())),
-            )?;
+            ).map_err(|_| SuiError::StorageError)?;
         }
 
         let event_digest = events.digest();
@@ -1123,7 +1123,7 @@ impl AuthorityStore {
             .enumerate()
             .map(|(i, e)| ((event_digest, i), e));
 
-        write_batch.insert_batch(&self.perpetual_tables.events, events)?;
+        write_batch.insert_batch(&self.perpetual_tables.events, events).map_err(|_| SuiError::StorageError)?;
 
         let new_locks_to_init: Vec<_> = written
             .values()
@@ -1180,7 +1180,7 @@ impl AuthorityStore {
         let locks = self
             .perpetual_tables
             .owned_object_transaction_locks
-            .multi_get(owned_input_objects)?;
+            .multi_get(owned_input_objects).map_err(|_| SuiError::StorageError)?;
 
         for ((i, lock), obj_ref) in locks.into_iter().enumerate().zip(owned_input_objects) {
             // The object / version must exist, and therefore lock initialized.
@@ -1240,8 +1240,8 @@ impl AuthorityStore {
             batch.insert_batch(
                 &self.perpetual_tables.owned_object_transaction_locks,
                 locks_to_write,
-            )?;
-            batch.write()?;
+            ).map_err(|_| SuiError::StorageError)?;
+            batch.write().map_err(|_| SuiError::StorageError)?;
         }
 
         Ok(())
@@ -1255,7 +1255,7 @@ impl AuthorityStore {
                 .perpetual_tables
                 .owned_object_transaction_locks
                 .get(&obj_ref)
-                .map_err(SuiError::StorageError)?
+                .map_err(|_| SuiError::StorageError)?
             {
                 match lock_info {
                     Some(lock_info) => {
@@ -1294,7 +1294,7 @@ impl AuthorityStore {
             .owned_object_transaction_locks
             .unbounded_iter()
             // Make the max possible entry for this object ID.
-            .skip_prior_to(&(object_id, SequenceNumber::MAX, ObjectDigest::MAX))?;
+            .skip_prior_to(&(object_id, SequenceNumber::MAX, ObjectDigest::MAX)).map_err(|_| SuiError::StorageError)?;
         Ok(iterator
             .next()
             .and_then(|value| {
@@ -1321,7 +1321,7 @@ impl AuthorityStore {
         let locks = self
             .perpetual_tables
             .owned_object_transaction_locks
-            .multi_get(objects)?;
+            .multi_get(objects).map_err(|_| SuiError::StorageError)?;
         for (lock, obj_ref) in locks.into_iter().zip(objects) {
             if lock.is_none() {
                 let latest_lock = self.get_latest_lock_for_object_id(obj_ref.0)?;
@@ -1360,7 +1360,7 @@ impl AuthorityStore {
     ) -> SuiResult {
         trace!(?objects, "initialize_locks");
 
-        let locks = locks_table.multi_get(objects)?;
+        let locks = locks_table.multi_get(objects).map_err(|_| SuiError::StorageError)?;
 
         if !is_force_reset {
             // If any locks exist and are not None, return errors for them
@@ -1382,7 +1382,7 @@ impl AuthorityStore {
             }
         }
 
-        write_batch.insert_batch(locks_table, objects.iter().map(|obj_ref| (obj_ref, None)))?;
+        write_batch.insert_batch(locks_table, objects.iter().map(|obj_ref| (obj_ref, None))).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -1392,7 +1392,7 @@ impl AuthorityStore {
         write_batch.delete_batch(
             &self.perpetual_tables.owned_object_transaction_locks,
             objects.iter(),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -1450,26 +1450,26 @@ impl AuthorityStore {
         write_batch.delete_batch(
             &self.perpetual_tables.executed_effects,
             iter::once(tx_digest),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         if let Some(events_digest) = effects.events_digest() {
             write_batch.schedule_delete_range(
                 &self.perpetual_tables.events,
                 &(*events_digest, usize::MIN),
                 &(*events_digest, usize::MAX),
-            )?;
+            ).map_err(|_| SuiError::StorageError)?;
         }
 
         let tombstones = effects
             .all_removed_objects()
             .into_iter()
             .map(|(obj_ref, _)| ObjectKey(obj_ref.0, obj_ref.1));
-        write_batch.delete_batch(&self.perpetual_tables.objects, tombstones)?;
+        write_batch.delete_batch(&self.perpetual_tables.objects, tombstones).map_err(|_| SuiError::StorageError)?;
 
         let all_new_object_keys = effects
             .all_changed_objects()
             .into_iter()
             .map(|((id, version, _), _, _)| ObjectKey(id, version));
-        write_batch.delete_batch(&self.perpetual_tables.objects, all_new_object_keys.clone())?;
+        write_batch.delete_batch(&self.perpetual_tables.objects, all_new_object_keys.clone()).map_err(|_| SuiError::StorageError)?;
 
         let modified_object_keys = effects
             .modified_at_versions()
@@ -1480,7 +1480,7 @@ impl AuthorityStore {
             ($object_keys: expr) => {
                 self.perpetual_tables
                     .objects
-                    .multi_get($object_keys.clone())?
+                    .multi_get($object_keys.clone()).map_err(|_| SuiError::StorageError)?
                     .into_iter()
                     .zip($object_keys)
                     .filter_map(|(obj_opt, key)| {
@@ -1515,9 +1515,9 @@ impl AuthorityStore {
         write_batch.delete_batch(
             &self.perpetual_tables.owned_object_transaction_locks,
             new_locks.flatten(),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
-        write_batch.write()?;
+        write_batch.write().map_err(|_| SuiError::StorageError)?;
 
         Ok(())
     }
@@ -1612,7 +1612,7 @@ impl AuthorityStore {
             .perpetual_tables
             .transactions
             .multi_get(tx_digests)
-            .map(|v| v.into_iter().map(|v| v.map(|v| v.into())).collect())?)
+            .map(|v| v.into_iter().map(|v| v.map(|v| v.into())).collect()).map_err(|_| SuiError::StorageError)?)
     }
 
     pub fn get_transaction_block(

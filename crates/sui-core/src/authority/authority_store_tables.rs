@@ -174,7 +174,7 @@ impl AuthorityPerpetualTables {
         let indirect_object = match store_object.data {
             StoreData::IndirectObject(ref metadata) => self
                 .indirect_move_objects
-                .get(&metadata.digest)?
+                .get(&metadata.digest).map_err(|_| SuiError::StorageError)?
                 .map(|o| o.migrate().into_inner()),
             _ => None,
         };
@@ -245,7 +245,7 @@ impl AuthorityPerpetualTables {
         let mut iterator = self
             .objects
             .unbounded_iter()
-            .skip_prior_to(&ObjectKey::max_for_id(&object_id))?;
+            .skip_prior_to(&ObjectKey::max_for_id(&object_id)).map_err(|_| SuiError::StorageError)?;
 
         if let Some((object_key, value)) = iterator.next() {
             if object_key.0 == object_id {
@@ -262,7 +262,7 @@ impl AuthorityPerpetualTables {
         let mut iterator = self
             .objects
             .unbounded_iter()
-            .skip_prior_to(&ObjectKey::max_for_id(&object_id))?;
+            .skip_prior_to(&ObjectKey::max_for_id(&object_id)).map_err(|_| SuiError::StorageError)?;
 
         if let Some((object_key, value)) = iterator.next() {
             if object_key.0 == object_id {
@@ -275,7 +275,7 @@ impl AuthorityPerpetualTables {
     pub fn get_recovery_epoch_at_restart(&self) -> SuiResult<EpochId> {
         Ok(self
             .epoch_start_configuration
-            .get(&())?
+            .get(&()).map_err(|_| SuiError::StorageError)?
             .expect("Must have current epoch.")
             .epoch_start_state()
             .epoch())
@@ -289,13 +289,13 @@ impl AuthorityPerpetualTables {
         wb.insert_batch(
             &self.epoch_start_configuration,
             std::iter::once(((), epoch_start_configuration)),
-        )?;
-        wb.write()?;
+        ).map_err(|_| SuiError::StorageError)?;
+        wb.write().map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
     pub fn get_highest_pruned_checkpoint(&self) -> SuiResult<CheckpointSequenceNumber> {
-        Ok(self.pruned_checkpoint.get(&())?.unwrap_or_default())
+        Ok(self.pruned_checkpoint.get(&()).map_err(|_| SuiError::StorageError)?.unwrap_or_default())
     }
 
     pub fn set_highest_pruned_checkpoint(
@@ -303,7 +303,7 @@ impl AuthorityPerpetualTables {
         wb: &mut DBBatch,
         checkpoint_number: CheckpointSequenceNumber,
     ) -> SuiResult {
-        wb.insert_batch(&self.pruned_checkpoint, [((), checkpoint_number)])?;
+        wb.insert_batch(&self.pruned_checkpoint, [((), checkpoint_number)]).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -311,17 +311,17 @@ impl AuthorityPerpetualTables {
         &self,
         digest: &TransactionDigest,
     ) -> SuiResult<Option<TrustedTransaction>> {
-        let Some(transaction) = self.transactions.get(digest)? else {
+        let Some(transaction) = self.transactions.get(digest).map_err(|_| SuiError::StorageError)? else {
             return Ok(None);
         };
         Ok(Some(transaction))
     }
 
     pub fn get_effects(&self, digest: &TransactionDigest) -> SuiResult<Option<TransactionEffects>> {
-        let Some(effect_digest) = self.executed_effects.get(digest)? else {
+        let Some(effect_digest) = self.executed_effects.get(digest).map_err(|_| SuiError::StorageError)? else {
             return Ok(None);
         };
-        Ok(self.effects.get(&effect_digest)?)
+        Ok(self.effects.get(&effect_digest).map_err(|_| SuiError::StorageError)?)
     }
 
     // DEPRECATED as the backing table has been moved to authority_per_epoch_store.
@@ -330,7 +330,7 @@ impl AuthorityPerpetualTables {
         &self,
         digest: &TransactionDigest,
     ) -> SuiResult<Option<(EpochId, CheckpointSequenceNumber)>> {
-        Ok(self.executed_transactions_to_checkpoint.get(digest)?)
+        Ok(self.executed_transactions_to_checkpoint.get(digest).map_err(|_| SuiError::StorageError)?)
     }
 
     pub fn get_newer_object_keys(
@@ -359,14 +359,14 @@ impl AuthorityPerpetualTables {
     ) -> SuiResult {
         let mut wb = self.objects.batch();
         for object in objects {
-            wb.delete_batch(&self.objects, [object])?;
+            wb.delete_batch(&self.objects, [object]).map_err(|_| SuiError::StorageError)?;
             if self.has_object_lock(object) {
                 self.remove_object_lock_batch(&mut wb, object)?;
             }
         }
-        wb.delete_batch(&self.executed_transactions_to_checkpoint, [digest])?;
-        wb.delete_batch(&self.executed_effects, [digest])?;
-        wb.write()?;
+        wb.delete_batch(&self.executed_transactions_to_checkpoint, [digest]).map_err(|_| SuiError::StorageError)?;
+        wb.delete_batch(&self.executed_effects, [digest]).map_err(|_| SuiError::StorageError)?;
+        wb.write().map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -387,7 +387,7 @@ impl AuthorityPerpetualTables {
     pub fn remove_object_lock_subtle(&self, object: &ObjectKey) -> SuiResult<ObjectRef> {
         let mut wb = self.objects.batch();
         let object_ref = self.remove_object_lock_batch(&mut wb, object)?;
-        wb.write()?;
+        wb.write().map_err(|_| SuiError::StorageError)?;
         Ok(object_ref)
     }
 
@@ -400,9 +400,9 @@ impl AuthorityPerpetualTables {
             &self.owned_object_transaction_locks,
             &(object.0, object.1, ObjectDigest::MIN),
             &(object.0, object.1, ObjectDigest::MAX),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         let object_ref = self.get_latest_object_ref_or_tombstone(object.0)?.unwrap();
-        wb.insert_batch(&self.owned_object_transaction_locks, [(object_ref, None)])?;
+        wb.insert_batch(&self.owned_object_transaction_locks, [(object_ref, None)]).map_err(|_| SuiError::StorageError)?;
         Ok(object_ref)
     }
 
@@ -412,7 +412,7 @@ impl AuthorityPerpetualTables {
     ) -> SuiResult {
         let mut wb = self.pruned_checkpoint.batch();
         self.set_highest_pruned_checkpoint(&mut wb, checkpoint_number)?;
-        wb.write()?;
+        wb.write().map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -420,7 +420,7 @@ impl AuthorityPerpetualTables {
         Ok(self
             .objects
             .unbounded_iter()
-            .skip_to(&ObjectKey::ZERO)?
+            .skip_to(&ObjectKey::ZERO).map_err(|_| SuiError::StorageError)?
             .next()
             .is_none())
     }
@@ -438,27 +438,27 @@ impl AuthorityPerpetualTables {
         // This checkpoints the entire db and not just objects table
         self.objects
             .checkpoint_db(path)
-            .map_err(SuiError::StorageError)
+            .map_err(|_| SuiError::StorageError)
     }
 
     pub fn reset_db_for_execution_since_genesis(&self) -> SuiResult {
         // TODO: Add new tables that get added to the db automatically
-        self.objects.unsafe_clear()?;
-        self.indirect_move_objects.unsafe_clear()?;
-        self.owned_object_transaction_locks.unsafe_clear()?;
-        self.executed_effects.unsafe_clear()?;
-        self.events.unsafe_clear()?;
-        self.executed_transactions_to_checkpoint.unsafe_clear()?;
-        self.root_state_hash_by_epoch.unsafe_clear()?;
-        self.epoch_start_configuration.unsafe_clear()?;
-        self.pruned_checkpoint.unsafe_clear()?;
-        self.expected_network_sui_amount.unsafe_clear()?;
-        self.expected_storage_fund_imbalance.unsafe_clear()?;
-        self.object_per_epoch_marker_table.unsafe_clear()?;
+        self.objects.unsafe_clear().map_err(|_| SuiError::StorageError)?;
+        self.indirect_move_objects.unsafe_clear().map_err(|_| SuiError::StorageError)?;
+        self.owned_object_transaction_locks.unsafe_clear().map_err(|_| SuiError::StorageError)?;
+        self.executed_effects.unsafe_clear().map_err(|_| SuiError::StorageError)?;
+        self.events.unsafe_clear().map_err(|_| SuiError::StorageError)?;
+        self.executed_transactions_to_checkpoint.unsafe_clear().map_err(|_| SuiError::StorageError)?;
+        self.root_state_hash_by_epoch.unsafe_clear().map_err(|_| SuiError::StorageError)?;
+        self.epoch_start_configuration.unsafe_clear().map_err(|_| SuiError::StorageError)?;
+        self.pruned_checkpoint.unsafe_clear().map_err(|_| SuiError::StorageError)?;
+        self.expected_network_sui_amount.unsafe_clear().map_err(|_| SuiError::StorageError)?;
+        self.expected_storage_fund_imbalance.unsafe_clear().map_err(|_| SuiError::StorageError)?;
+        self.object_per_epoch_marker_table.unsafe_clear().map_err(|_| SuiError::StorageError)?;
         self.objects
             .rocksdb
             .flush()
-            .map_err(SuiError::StorageError)?;
+            .map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -469,7 +469,7 @@ impl AuthorityPerpetualTables {
         accumulator: Accumulator,
     ) -> SuiResult {
         self.root_state_hash_by_epoch
-            .insert(&epoch, &(last_checkpoint_of_epoch, accumulator))?;
+            .insert(&epoch, &(last_checkpoint_of_epoch, accumulator)).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -480,8 +480,8 @@ impl AuthorityPerpetualTables {
         wb.insert_batch(
             &self.objects,
             std::iter::once((ObjectKey::from(object_reference), wrapper)),
-        )?;
-        wb.write()?;
+        ).map_err(|_| SuiError::StorageError)?;
+        wb.write().map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 }
@@ -492,7 +492,7 @@ impl ObjectStore for AuthorityPerpetualTables {
         let obj_entry = self
             .objects
             .unbounded_iter()
-            .skip_prior_to(&ObjectKey::max_for_id(object_id))?
+            .skip_prior_to(&ObjectKey::max_for_id(object_id)).map_err(|_| SuiError::StorageError)?
             .next();
 
         match obj_entry {
@@ -510,7 +510,7 @@ impl ObjectStore for AuthorityPerpetualTables {
     ) -> Result<Option<Object>, SuiError> {
         Ok(self
             .objects
-            .get(&ObjectKey(*object_id, version))?
+            .get(&ObjectKey(*object_id, version)).map_err(|_| SuiError::StorageError)?
             .map(|object| self.object(&ObjectKey(*object_id, version), object))
             .transpose()?
             .flatten())

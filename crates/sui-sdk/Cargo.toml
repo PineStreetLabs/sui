@@ -35,7 +35,6 @@ tracing.workspace = true
 move-core-types.workspace = true
 
 fastcrypto.workspace = true
-workspace-hack.workspace = true
 
 [dev-dependencies]
 clap.workspace = true

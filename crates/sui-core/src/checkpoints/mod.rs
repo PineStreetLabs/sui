@@ -318,8 +318,8 @@ impl CheckpointStore {
                 &self.locally_computed_checkpoints,
                 &0,
                 &last_local_summary,
-            )?;
-            batch.write()?;
+            ).map_err(|_| SuiError::StorageError)?;
+            batch.write().map_err(|_| SuiError::StorageError)?;
             info!("Pruned local summaries up to {:?}", last_local_summary);
         }
         Ok(())
@@ -546,9 +546,9 @@ impl CheckpointStore {
         &self,
         epoch_id: EpochId,
     ) -> SuiResult<Option<VerifiedCheckpoint>> {
-        let seq = self.epoch_last_checkpoint_map.get(&epoch_id)?;
+        let seq = self.epoch_last_checkpoint_map.get(&epoch_id).map_err(|_| SuiError::StorageError)?;
         let checkpoint = match seq {
-            Some(seq) => self.get_checkpoint_by_sequence_number(seq)?,
+            Some(seq) => self.get_checkpoint_by_sequence_number(seq).map_err(|_| SuiError::StorageError)?,
             None => None,
         };
         Ok(checkpoint)
@@ -584,7 +584,7 @@ impl CheckpointStore {
         // This checkpoints the entire db and not one column family
         self.checkpoint_content
             .checkpoint_db(path)
-            .map_err(SuiError::StorageError)
+            .map_err(|_| SuiError::StorageError)
     }
 
     pub fn delete_highest_executed_checkpoint_test_only(&self) -> Result<(), TypedStoreError> {
@@ -598,11 +598,11 @@ impl CheckpointStore {
     }
 
     pub fn reset_db_for_execution_since_genesis(&self) -> SuiResult {
-        self.delete_highest_executed_checkpoint_test_only()?;
+        self.delete_highest_executed_checkpoint_test_only().map_err(|_| SuiError::StorageError)?;
         self.watermarks
             .rocksdb
             .flush()
-            .map_err(SuiError::StorageError)?;
+            .map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 }
@@ -771,20 +771,20 @@ impl CheckpointBuilder {
             batch.insert_batch(
                 &self.tables.checkpoint_content,
                 [(contents.digest(), contents)],
-            )?;
+            ).map_err(|_| SuiError::StorageError)?;
 
             batch.insert_batch(
                 &self.tables.locally_computed_checkpoints,
                 [(sequence_number, summary)],
-            )?;
+            ).map_err(|_| SuiError::StorageError)?;
         }
-        batch.write()?;
+        batch.write().map_err(|_| SuiError::StorageError)?;
 
         for (local_checkpoint, _) in &new_checkpoint {
             if let Some(certified_checkpoint) = self
                 .tables
                 .certified_checkpoints
-                .get(local_checkpoint.sequence_number())?
+                .get(local_checkpoint.sequence_number()).map_err(|_| SuiError::StorageError)?
             {
                 self.tables
                     .check_for_checkpoint_fork(local_checkpoint, &certified_checkpoint.into());
@@ -793,7 +793,7 @@ impl CheckpointBuilder {
 
         self.notify_aggregator.notify_one();
         self.epoch_store
-            .process_pending_checkpoint(height, new_checkpoint)?;
+            .process_pending_checkpoint(height, new_checkpoint).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -1125,7 +1125,7 @@ impl CheckpointBuilder {
                 .epoch_store
                 .builder_included_transactions_in_checkpoint(
                     roots.iter().map(|e| e.transaction_digest()),
-                )?;
+                ).map_err(|_| SuiError::StorageError)?;
 
             for (effect, tx_included) in roots.into_iter().zip(transactions_included.into_iter()) {
                 let digest = effect.transaction_digest();
@@ -1139,7 +1139,7 @@ impl CheckpointBuilder {
 
                 let existing_effects = self
                     .epoch_store
-                    .effects_signatures_exists(effect.dependencies().iter())?;
+                    .effects_signatures_exists(effect.dependencies().iter()).map_err(|_| SuiError::StorageError)?;
 
                 for (dependency, effects_signature_exists) in
                     effect.dependencies().iter().zip(existing_effects.iter())
@@ -1273,7 +1273,7 @@ impl CheckpointAggregator {
             let iter = self.epoch_store.get_pending_checkpoint_signatures_iter(
                 current.summary.sequence_number,
                 current.next_index,
-            )?;
+            ).map_err(|_| SuiError::StorageError)?;
             for ((seq, index), data) in iter {
                 if seq != current.summary.sequence_number {
                     debug!(
@@ -1304,7 +1304,7 @@ impl CheckpointAggregator {
                         ),
                     );
 
-                    self.tables.insert_certified_checkpoint(&summary)?;
+                    self.tables.insert_certified_checkpoint(&summary).map_err(|_| SuiError::StorageError)?;
                     self.metrics
                         .last_certified_checkpoint
                         .set(current.summary.sequence_number as i64);
@@ -1487,7 +1487,7 @@ impl CheckpointServiceNotify for CheckpointService {
             .keys()
             .skip_to_last()
             .next()
-            .transpose()?
+            .transpose().map_err(|_| SuiError::StorageError)?
         {
             if sequence <= last_certified {
                 debug!(
@@ -1511,7 +1511,7 @@ impl CheckpointServiceNotify for CheckpointService {
         // We need to make sure we write to `pending_signatures` and trigger `notify_aggregator` without race conditions
         let mut index = self.last_signature_index.lock();
         *index += 1;
-        epoch_store.insert_checkpoint_signature(sequence, *index, info)?;
+        epoch_store.insert_checkpoint_signature(sequence, *index, info).map_err(|_| SuiError::StorageError)?;
         self.notify_aggregator.notify_one();
         Ok(())
     }

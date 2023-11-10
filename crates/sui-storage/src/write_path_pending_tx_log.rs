@@ -51,9 +51,9 @@ impl WritePathPendingTransactionLog {
         tx: &VerifiedTransaction,
     ) -> SuiResult<IsFirstRecord> {
         let tx_digest = tx.digest();
-        let mut transaction = self.pending_transactions.logs.transaction()?;
+        let mut transaction = self.pending_transactions.logs.transaction().map_err(|_| SuiError::StorageError)?;
         if transaction
-            .get(&self.pending_transactions.logs, tx_digest)?
+            .get(&self.pending_transactions.logs, tx_digest).map_err(|_| SuiError::StorageError)?
             .is_some()
         {
             return Ok(false);
@@ -61,7 +61,7 @@ impl WritePathPendingTransactionLog {
         transaction.insert_batch(
             &self.pending_transactions.logs,
             [(tx_digest, tx.serializable_ref())],
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         let result = transaction.commit();
         Ok(result.is_ok())
     }
@@ -78,8 +78,8 @@ impl WritePathPendingTransactionLog {
     //        transaction again after the call of `write_pending_transaction_maybe`.
     pub fn finish_transaction(&self, tx: &TransactionDigest) -> SuiResult {
         let mut write_batch = self.pending_transactions.logs.batch();
-        write_batch.delete_batch(&self.pending_transactions.logs, std::iter::once(tx))?;
-        write_batch.write().map_err(SuiError::from)
+        write_batch.delete_batch(&self.pending_transactions.logs, std::iter::once(tx)).map_err(|_| SuiError::StorageError)?;
+        write_batch.write().map_err(|_| SuiError::StorageError)
     }
 
     pub fn load_all_pending_transactions(&self) -> Vec<VerifiedTransaction> {

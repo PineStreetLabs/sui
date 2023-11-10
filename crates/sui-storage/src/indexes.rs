@@ -372,7 +372,7 @@ impl IndexStore {
             "coin_delete_keys: {:?}",
             coin_delete_keys,
         );
-        batch.delete_batch(&self.tables.coin_index, coin_delete_keys.into_iter())?;
+        batch.delete_batch(&self.tables.coin_index, coin_delete_keys.into_iter()).map_err(|_| SuiError::StorageError)?;
 
         // 2. Upsert new owner, by looking at `object_index_changes.new_owners`.
         // For a object to appear in `new_owners`, it must be owned by `Owner::Address` after the tx.
@@ -419,7 +419,7 @@ impl IndexStore {
             coin_add_keys,
         );
 
-        batch.insert_batch(&self.tables.coin_index, coin_add_keys.into_iter())?;
+        batch.insert_batch(&self.tables.coin_index, coin_add_keys.into_iter()).map_err(|_| SuiError::StorageError)?;
 
         let per_coin_type_balance_changes: Vec<_> = balance_changes
             .iter()
@@ -468,29 +468,29 @@ impl IndexStore {
         batch.insert_batch(
             &self.tables.transaction_order,
             std::iter::once((sequence, *digest)),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         batch.insert_batch(
             &self.tables.transactions_seq,
             std::iter::once((*digest, sequence)),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         batch.insert_batch(
             &self.tables.transactions_from_addr,
             std::iter::once(((sender, sequence), *digest)),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         batch.insert_batch(
             &self.tables.transactions_by_input_object_id,
             active_inputs.map(|id| ((id, sequence), *digest)),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         batch.insert_batch(
             &self.tables.transactions_by_mutated_object_id,
             mutated_objects
                 .clone()
                 .map(|(obj_ref, _)| ((obj_ref.0, sequence), *digest)),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         batch.insert_batch(
             &self.tables.transactions_by_move_function,
@@ -500,7 +500,7 @@ impl IndexStore {
                     *digest,
                 )
             }),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         batch.insert_batch(
             &self.tables.transactions_to_addr,
@@ -510,32 +510,32 @@ impl IndexStore {
                     .ok()
                     .map(|addr| ((addr, sequence), digest))
             }),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         // Coin Index
         let cache_updates = self
             .index_coin(digest, &mut batch, &object_index_changes, tx_coins)
-            .await?;
+            .await.map_err(|_| SuiError::StorageError)?;
 
         // Owner index
         batch.delete_batch(
             &self.tables.owner_index,
             object_index_changes.deleted_owners.into_iter(),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         batch.delete_batch(
             &self.tables.dynamic_field_index,
             object_index_changes.deleted_dynamic_fields.into_iter(),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         batch.insert_batch(
             &self.tables.owner_index,
             object_index_changes.new_owners.into_iter(),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         batch.insert_batch(
             &self.tables.dynamic_field_index,
             object_index_changes.new_dynamic_fields.into_iter(),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         // events
         let event_digest = events.digest();
@@ -546,7 +546,7 @@ impl IndexStore {
                 .iter()
                 .enumerate()
                 .map(|(i, _)| ((sequence, i), (event_digest, *digest, timestamp_ms))),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         batch.insert_batch(
             &self.tables.event_by_move_module,
             events
@@ -560,7 +560,7 @@ impl IndexStore {
                     )
                 })
                 .map(|(i, m)| ((m, (sequence, i)), (event_digest, *digest, timestamp_ms))),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         batch.insert_batch(
             &self.tables.event_by_sender,
             events.data.iter().enumerate().map(|(i, e)| {
@@ -569,7 +569,7 @@ impl IndexStore {
                     (event_digest, *digest, timestamp_ms),
                 )
             }),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         batch.insert_batch(
             &self.tables.event_by_move_event,
             events.data.iter().enumerate().map(|(i, e)| {
@@ -578,7 +578,7 @@ impl IndexStore {
                     (event_digest, *digest, timestamp_ms),
                 )
             }),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         batch.insert_batch(
             &self.tables.event_by_time,
@@ -588,7 +588,7 @@ impl IndexStore {
                     (event_digest, *digest, timestamp_ms),
                 )
             }),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         batch.insert_batch(
             &self.tables.event_by_event_module,
@@ -601,7 +601,7 @@ impl IndexStore {
                     (event_digest, *digest, timestamp_ms),
                 )
             }),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         // Loaded child objects table
         let loaded_child_objects: Vec<_> = loaded_child_objects
@@ -611,7 +611,7 @@ impl IndexStore {
         batch.insert_batch(
             &self.tables.loaded_child_object_versions,
             std::iter::once((*digest, loaded_child_objects)),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         let invalidate_caches =
             read_size_from_env(ENV_VAR_INVALIDATE_INSTEAD_OF_UPDATE).unwrap_or(0) > 0;
@@ -631,7 +631,7 @@ impl IndexStore {
             .await?;
         }
 
-        batch.write()?;
+        batch.write().map_err(|_| SuiError::StorageError)?;
 
         if !invalidate_caches {
             // We cannot update the cache before updating the db or else on failing to write to db
@@ -696,7 +696,7 @@ impl IndexStore {
 
                 if reverse {
                     let iter = iter
-                        .skip_prior_to(&cursor.unwrap_or(TxSequenceNumber::MAX))?
+                        .skip_prior_to(&cursor.unwrap_or(TxSequenceNumber::MAX)).map_err(|_| SuiError::StorageError)?
                         .reverse()
                         .skip(usize::from(cursor.is_some()))
                         .map(|(_, digest)| digest);
@@ -707,7 +707,7 @@ impl IndexStore {
                     }
                 } else {
                     let iter = iter
-                        .skip_to(&cursor.unwrap_or(TxSequenceNumber::MIN))?
+                        .skip_to(&cursor.unwrap_or(TxSequenceNumber::MIN)).map_err(|_| SuiError::StorageError)?
                         .skip(usize::from(cursor.is_some()))
                         .map(|(_, digest)| digest);
                     if let Some(limit) = limit {
@@ -728,7 +728,7 @@ impl IndexStore {
         self.tables
             .loaded_child_object_versions
             .get(transaction_digest)
-            .map_err(|err| err.into())
+            .map_err(|_| SuiError::StorageError)
     }
 
     fn get_transactions_from_index<KeyT: Clone + Serialize + DeserializeOwned + PartialEq>(
@@ -741,7 +741,7 @@ impl IndexStore {
         Ok(if reverse {
             let iter = index
                 .unbounded_iter()
-                .skip_prior_to(&(key.clone(), cursor.unwrap_or(TxSequenceNumber::MAX)))?
+                .skip_prior_to(&(key.clone(), cursor.unwrap_or(TxSequenceNumber::MAX))).map_err(|_| SuiError::StorageError)?
                 .reverse()
                 // skip one more if exclusive cursor is Some
                 .skip(usize::from(cursor.is_some()))
@@ -755,7 +755,7 @@ impl IndexStore {
         } else {
             let iter = index
                 .unbounded_iter()
-                .skip_to(&(key.clone(), cursor.unwrap_or(TxSequenceNumber::MIN)))?
+                .skip_to(&(key.clone(), cursor.unwrap_or(TxSequenceNumber::MIN))).map_err(|_| SuiError::StorageError)?
                 // skip one more if exclusive cursor is Some
                 .skip(usize::from(cursor.is_some()))
                 .take_while(|((id, _), _)| *id == key)
@@ -865,7 +865,7 @@ impl IndexStore {
         let iter = self.tables.transactions_by_move_function.unbounded_iter();
         Ok(if reverse {
             let iter = iter
-                .skip_prior_to(&key)?
+                .skip_prior_to(&key).map_err(|_| SuiError::StorageError)?
                 .reverse()
                 // skip one more if exclusive cursor is Some
                 .skip(usize::from(cursor.is_some()))
@@ -882,7 +882,7 @@ impl IndexStore {
             }
         } else {
             let iter = iter
-                .skip_to(&key)?
+                .skip_to(&key).map_err(|_| SuiError::StorageError)?
                 // skip one more if exclusive cursor is Some
                 .skip(usize::from(cursor.is_some()))
                 .take_while(|((id, m, f, _), _)| {
@@ -919,7 +919,7 @@ impl IndexStore {
         &self,
         digest: &TransactionDigest,
     ) -> SuiResult<Option<TxSequenceNumber>> {
-        Ok(self.tables.transactions_seq.get(digest)?)
+        Ok(self.tables.transactions_seq.get(digest).map_err(|_| SuiError::StorageError)?)
     }
 
     pub fn all_events(
@@ -933,7 +933,7 @@ impl IndexStore {
             self.tables
                 .event_order
                 .unbounded_iter()
-                .skip_prior_to(&(tx_seq, event_seq))?
+                .skip_prior_to(&(tx_seq, event_seq)).map_err(|_| SuiError::StorageError)?
                 .reverse()
                 .take(limit)
                 .map(|((_, event_seq), (digest, tx_digest, time))| {
@@ -944,7 +944,7 @@ impl IndexStore {
             self.tables
                 .event_order
                 .unbounded_iter()
-                .skip_to(&(tx_seq, event_seq))?
+                .skip_to(&(tx_seq, event_seq)).map_err(|_| SuiError::StorageError)?
                 .take(limit)
                 .map(|((_, event_seq), (digest, tx_digest, time))| {
                     (digest, tx_digest, event_seq, time)
@@ -968,7 +968,7 @@ impl IndexStore {
             self.tables
                 .event_order
                 .unbounded_iter()
-                .skip_prior_to(&(min(tx_seq, seq), event_seq))?
+                .skip_prior_to(&(min(tx_seq, seq), event_seq)).map_err(|_| SuiError::StorageError)?
                 .reverse()
                 .take_while(|((tx, _), _)| tx == &seq)
                 .take(limit)
@@ -980,7 +980,7 @@ impl IndexStore {
             self.tables
                 .event_order
                 .unbounded_iter()
-                .skip_to(&(max(tx_seq, seq), event_seq))?
+                .skip_to(&(max(tx_seq, seq), event_seq)).map_err(|_| SuiError::StorageError)?
                 .take_while(|((tx, _), _)| tx == &seq)
                 .take(limit)
                 .map(|((_, event_seq), (digest, tx_digest, time))| {
@@ -1001,7 +1001,7 @@ impl IndexStore {
         Ok(if descending {
             index
                 .unbounded_iter()
-                .skip_prior_to(&(key.clone(), (tx_seq, event_seq)))?
+                .skip_prior_to(&(key.clone(), (tx_seq, event_seq))).map_err(|_| SuiError::StorageError)?
                 .reverse()
                 .take_while(|((m, _), _)| m == key)
                 .take(limit)
@@ -1012,7 +1012,7 @@ impl IndexStore {
         } else {
             index
                 .unbounded_iter()
-                .skip_to(&(key.clone(), (tx_seq, event_seq)))?
+                .skip_to(&(key.clone(), (tx_seq, event_seq))).map_err(|_| SuiError::StorageError)?
                 .take_while(|((m, _), _)| m == key)
                 .take(limit)
                 .map(|((_, (_, event_seq)), (digest, tx_digest, time))| {
@@ -1107,7 +1107,7 @@ impl IndexStore {
             self.tables
                 .event_by_time
                 .unbounded_iter()
-                .skip_prior_to(&(end_time, (tx_seq, event_seq)))?
+                .skip_prior_to(&(end_time, (tx_seq, event_seq))).map_err(|_| SuiError::StorageError)?
                 .reverse()
                 .take_while(|((m, _), _)| m >= &start_time)
                 .take(limit)
@@ -1119,7 +1119,7 @@ impl IndexStore {
             self.tables
                 .event_by_time
                 .unbounded_iter()
-                .skip_to(&(start_time, (tx_seq, event_seq)))?
+                .skip_to(&(start_time, (tx_seq, event_seq))).map_err(|_| SuiError::StorageError)?
                 .take_while(|((m, _), _)| m <= &end_time)
                 .take(limit)
                 .map(|((_, (_, event_seq)), (digest, tx_digest, time))| {
@@ -1142,7 +1142,7 @@ impl IndexStore {
             .dynamic_field_index
             .iter_with_bounds(Some(iter_lower_bound), Some(iter_upper_bound))
             // The object id 0 is the smallest possible
-            .skip_to(&(object, cursor.unwrap_or(ObjectID::ZERO)))?
+            .skip_to(&(object, cursor.unwrap_or(ObjectID::ZERO))).map_err(|_| SuiError::StorageError)?
             // skip an extra b/c the cursor is exclusive
             .skip(usize::from(cursor.is_some()))
             .take_while(move |((object_owner, _), _)| (object_owner == &object))
@@ -1168,7 +1168,7 @@ impl IndexStore {
         if let Some(info) = self
             .tables
             .dynamic_field_index
-            .get(&(object, dynamic_field_id))?
+            .get(&(object, dynamic_field_id)).map_err(|_| SuiError::StorageError)?
         {
             // info.object_id != dynamic_field_id ==> is_wrapper
             debug_assert!(
@@ -1193,7 +1193,7 @@ impl IndexStore {
         if let Some(info) = self
             .tables
             .dynamic_field_index
-            .get(&(object, dynamic_object_field_id))?
+            .get(&(object, dynamic_object_field_id)).map_err(|_| SuiError::StorageError)?
         {
             return Ok(Some(info.object_id));
         }
@@ -1228,7 +1228,7 @@ impl IndexStore {
             coin_type_tag.unwrap_or_else(|| String::from_utf8([0u8].to_vec()).unwrap());
         Ok(coin_index
             .unbounded_iter()
-            .skip_to(&(owner, starting_coin_type.clone(), ObjectID::ZERO))?
+            .skip_to(&(owner, starting_coin_type.clone(), ObjectID::ZERO)).map_err(|_| SuiError::StorageError)?
             .take_while(move |((addr, coin_type, _), _)| {
                 if addr != &owner {
                     return false;
@@ -1253,7 +1253,7 @@ impl IndexStore {
             .tables
             .coin_index
             .unbounded_iter()
-            .skip_to(&(owner, starting_coin_type.clone(), starting_object_id))?
+            .skip_to(&(owner, starting_coin_type.clone(), starting_object_id)).map_err(|_| SuiError::StorageError)?
             .filter(move |((_, _, obj_id), _)| obj_id != &starting_object_id)
             .enumerate()
             .take_while(move |(index, ((addr, coin_type, _), _))| {
@@ -1284,7 +1284,7 @@ impl IndexStore {
             .owner_index
             .unbounded_iter()
             // The object id 0 is the smallest possible
-            .skip_to(&(owner, starting_object_id))?
+            .skip_to(&(owner, starting_object_id)).map_err(|_| SuiError::StorageError)?
             .skip(usize::from(starting_object_id != ObjectID::ZERO))
             .take_while(move |((address_owner, _), _)| address_owner == &owner)
             .filter(move |(_, o)| {
@@ -1302,12 +1302,12 @@ impl IndexStore {
         batch.insert_batch(
             &self.tables.owner_index,
             object_index_changes.new_owners.into_iter(),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         batch.insert_batch(
             &self.tables.dynamic_field_index,
             object_index_changes.new_dynamic_fields.into_iter(),
-        )?;
-        batch.write()?;
+        ).map_err(|_| SuiError::StorageError)?;
+        batch.write().map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -1320,7 +1320,7 @@ impl IndexStore {
         self.tables
             .transactions_from_addr
             .checkpoint_db(path)
-            .map_err(SuiError::StorageError)
+            .map_err(|_| SuiError::StorageError)
     }
 
     /// This method first gets the balance from `per_coin_type_balance` cache. On a cache miss, it

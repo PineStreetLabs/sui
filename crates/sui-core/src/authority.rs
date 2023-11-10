@@ -1953,14 +1953,14 @@ impl AuthorityState {
         let summary = match request.sequence_number {
             Some(seq) => self
                 .checkpoint_store
-                .get_checkpoint_by_sequence_number(seq)?,
+                .get_checkpoint_by_sequence_number(seq).map_err(|_| SuiError::StorageError)?,
             None => self.checkpoint_store.get_latest_certified_checkpoint(),
         }
         .map(|v| v.into_inner());
         let contents = match &summary {
             Some(s) => self
                 .checkpoint_store
-                .get_checkpoint_contents(&s.content_digest)?,
+                .get_checkpoint_contents(&s.content_digest).map_err(|_| SuiError::StorageError)?,
             None => None,
         };
         Ok(CheckpointResponse {
@@ -2122,7 +2122,7 @@ impl AuthorityState {
             .database
             .perpetual_tables
             .object_per_epoch_marker_table
-            .schedule_delete_all()?)
+            .schedule_delete_all().map_err(|_| SuiError::StorageError)?)
     }
 
     fn create_owner_index_if_empty(
@@ -2556,7 +2556,7 @@ impl AuthorityState {
     ) -> SuiResult<Option<VerifiedCheckpoint>> {
         Ok(self
             .checkpoint_store
-            .get_checkpoint_by_sequence_number(sequence_number)?)
+            .get_checkpoint_by_sequence_number(sequence_number).map_err(|_| SuiError::StorageError)?)
     }
 
     #[instrument(level = "trace", skip_all)]
@@ -2571,7 +2571,7 @@ impl AuthorityState {
         };
         let checkpoint = self
             .checkpoint_store
-            .get_checkpoint_by_sequence_number(checkpoint)?;
+            .get_checkpoint_by_sequence_number(checkpoint).map_err(|_| SuiError::StorageError)?;
         Ok(checkpoint)
     }
 
@@ -2914,7 +2914,7 @@ impl AuthorityState {
     ) -> SuiResult<Vec<Option<VerifiedCheckpoint>>> {
         Ok(self
             .checkpoint_store
-            .multi_get_checkpoint_by_sequence_number(sequence_numbers)?)
+            .multi_get_checkpoint_by_sequence_number(sequence_numbers).map_err(|_| SuiError::StorageError)?)
     }
 
     #[instrument(level = "trace", skip_all)]
@@ -2923,7 +2923,7 @@ impl AuthorityState {
         digest: &TransactionEventsDigest,
     ) -> SuiResult<TransactionEvents> {
         self.database
-            .get_events(digest)?
+            .get_events(digest).map_err(|_| SuiError::StorageError)?
             .ok_or(SuiError::TransactionEventsNotFound { digest: *digest })
     }
 
@@ -2998,7 +2998,7 @@ impl AuthorityState {
 
     pub fn get_latest_checkpoint_sequence_number(&self) -> SuiResult<CheckpointSequenceNumber> {
         self.get_checkpoint_store()
-            .get_highest_executed_checkpoint_seq_number()?
+            .get_highest_executed_checkpoint_seq_number().map_err(|_| SuiError::StorageError)?
             .ok_or(SuiError::UserInputError {
                 error: UserInputError::LatestCheckpointSequenceNumberNotFound,
             })
@@ -3011,7 +3011,7 @@ impl AuthorityState {
     ) -> SuiResult<CheckpointSummary> {
         let verified_checkpoint = self
             .get_checkpoint_store()
-            .get_checkpoint_by_sequence_number(sequence_number)?;
+            .get_checkpoint_by_sequence_number(sequence_number).map_err(|_| SuiError::StorageError)?;
         match verified_checkpoint {
             Some(verified_checkpoint) => Ok(verified_checkpoint.into_inner().into_data()),
             None => Err(SuiError::UserInputError {
@@ -3027,7 +3027,7 @@ impl AuthorityState {
     ) -> SuiResult<CheckpointSummary> {
         let verified_checkpoint = self
             .get_checkpoint_store()
-            .get_checkpoint_by_digest(&digest)?;
+            .get_checkpoint_by_digest(&digest).map_err(|_| SuiError::StorageError)?;
         match verified_checkpoint {
             Some(verified_checkpoint) => Ok(verified_checkpoint.into_inner().into_data()),
             None => Err(SuiError::UserInputError {
@@ -3069,7 +3069,7 @@ impl AuthorityState {
     ) -> SuiResult<VerifiedCheckpoint> {
         let verified_checkpoint = self
             .get_checkpoint_store()
-            .get_checkpoint_by_sequence_number(sequence_number)?;
+            .get_checkpoint_by_sequence_number(sequence_number).map_err(|_| SuiError::StorageError)?;
         match verified_checkpoint {
             Some(verified_checkpoint) => Ok(verified_checkpoint),
             None => Err(SuiError::UserInputError {
@@ -3085,7 +3085,7 @@ impl AuthorityState {
     ) -> SuiResult<VerifiedCheckpoint> {
         let verified_checkpoint = self
             .get_checkpoint_store()
-            .get_checkpoint_by_digest(&digest)?;
+            .get_checkpoint_by_digest(&digest).map_err(|_| SuiError::StorageError)?;
         match verified_checkpoint {
             Some(verified_checkpoint) => Ok(verified_checkpoint),
             None => Err(SuiError::UserInputError {
@@ -3100,7 +3100,7 @@ impl AuthorityState {
         digest: CheckpointContentsDigest,
     ) -> SuiResult<CheckpointContents> {
         self.get_checkpoint_store()
-            .get_checkpoint_contents(&digest)?
+            .get_checkpoint_contents(&digest).map_err(|_| SuiError::StorageError)?
             .ok_or(SuiError::UserInputError {
                 error: UserInputError::CheckpointContentsNotFound(digest),
             })
@@ -3113,7 +3113,7 @@ impl AuthorityState {
     ) -> SuiResult<CheckpointContents> {
         let verified_checkpoint = self
             .get_checkpoint_store()
-            .get_checkpoint_by_sequence_number(sequence_number)?;
+            .get_checkpoint_by_sequence_number(sequence_number).map_err(|_| SuiError::StorageError)?;
         match verified_checkpoint {
             Some(verified_checkpoint) => {
                 let content_digest = verified_checkpoint.into_inner().content_digest;
@@ -3285,10 +3285,10 @@ impl AuthorityState {
         tx_digest: &TransactionDigest,
         epoch_store: &Arc<AuthorityPerEpochStore>,
     ) -> SuiResult<Option<VerifiedCertificate>> {
-        let Some(cert_sig) = epoch_store.get_transaction_cert_sig(tx_digest)? else {
+        let Some(cert_sig) = epoch_store.get_transaction_cert_sig(tx_digest).map_err(|_| SuiError::StorageError)? else {
             return Ok(None);
         };
-        let Some(transaction) = self.database.get_transaction_block(tx_digest)? else {
+        let Some(transaction) = self.database.get_transaction_block(tx_digest).map_err(|_| SuiError::StorageError)? else {
             return Ok(None);
         };
 
@@ -3311,8 +3311,8 @@ impl AuthorityState {
         if let Some(effects) =
             self.get_signed_effects_and_maybe_resign(transaction_digest, epoch_store)?
         {
-            if let Some(transaction) = self.database.get_transaction_block(transaction_digest)? {
-                let cert_sig = epoch_store.get_transaction_cert_sig(transaction_digest)?;
+            if let Some(transaction) = self.database.get_transaction_block(transaction_digest).map_err(|_| SuiError::StorageError)? {
+                let cert_sig = epoch_store.get_transaction_cert_sig(transaction_digest).map_err(|_| SuiError::StorageError)?;
                 let events = if let Some(digest) = effects.events_digest() {
                     self.get_transaction_events(digest)?
                 } else {
@@ -4267,7 +4267,7 @@ impl TransactionKeyValueStoreTrait for AuthorityState {
         let store = self.get_checkpoint_store();
         for seq in checkpoint_summaries {
             let checkpoint = store
-                .get_checkpoint_by_sequence_number(*seq)?
+                .get_checkpoint_by_sequence_number(*seq).map_err(|_| SuiError::StorageError)?
                 .map(|c| c.into_inner());
 
             summaries.push(checkpoint);
@@ -4276,7 +4276,7 @@ impl TransactionKeyValueStoreTrait for AuthorityState {
         let mut contents = Vec::with_capacity(checkpoint_contents.len());
         for seq in checkpoint_contents {
             let checkpoint = store
-                .get_checkpoint_by_sequence_number(*seq)?
+                .get_checkpoint_by_sequence_number(*seq).map_err(|_| SuiError::StorageError)?
                 .and_then(|summary| {
                     store
                         .get_checkpoint_contents(&summary.content_digest)
@@ -4288,14 +4288,14 @@ impl TransactionKeyValueStoreTrait for AuthorityState {
         let mut summaries_by_digest = Vec::with_capacity(checkpoint_summaries_by_digest.len());
         for digest in checkpoint_summaries_by_digest {
             let checkpoint = store
-                .get_checkpoint_by_digest(digest)?
+                .get_checkpoint_by_digest(digest).map_err(|_| SuiError::StorageError)?
                 .map(|c| c.into_inner());
             summaries_by_digest.push(checkpoint);
         }
 
         let mut contents_by_digest = Vec::with_capacity(checkpoint_contents_by_digest.len());
         for digest in checkpoint_contents_by_digest {
-            let checkpoint = store.get_checkpoint_contents(digest)?;
+            let checkpoint = store.get_checkpoint_contents(digest).map_err(|_| SuiError::StorageError)?;
             contents_by_digest.push(checkpoint);
         }
 

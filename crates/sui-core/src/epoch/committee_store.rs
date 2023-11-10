@@ -62,7 +62,7 @@ impl CommitteeStore {
 
     pub fn init_genesis_committee(&self, genesis_committee: Committee) -> SuiResult {
         assert_eq!(genesis_committee.epoch, 0);
-        self.tables.committee_map.insert(&0, &genesis_committee)?;
+        self.tables.committee_map.insert(&0, &genesis_committee).map_err(|_| SuiError::StorageError)?;
         self.cache.write().insert(0, Arc::new(genesis_committee));
         Ok(())
     }
@@ -74,7 +74,7 @@ impl CommitteeStore {
         } else {
             self.tables
                 .committee_map
-                .insert(&new_committee.epoch, new_committee)?;
+                .insert(&new_committee.epoch, new_committee).map_err(|_| SuiError::StorageError)?;
             self.cache
                 .write()
                 .insert(new_committee.epoch, Arc::new(new_committee.clone()));
@@ -86,7 +86,7 @@ impl CommitteeStore {
         if let Some(committee) = self.cache.read().get(epoch_id) {
             return Ok(Some(committee.clone()));
         }
-        let committee = self.tables.committee_map.get(epoch_id)?;
+        let committee = self.tables.committee_map.get(epoch_id).map_err(|_| SuiError::StorageError)?;
         let committee = committee.map(Arc::new);
         if let Some(committee) = committee.as_ref() {
             self.cache.write().insert(*epoch_id, committee.clone());
@@ -122,7 +122,7 @@ impl CommitteeStore {
         self.tables
             .committee_map
             .checkpoint_db(path)
-            .map_err(SuiError::StorageError)
+            .map_err(|_| SuiError::StorageError)
     }
 
     fn database_is_empty(&self) -> bool {

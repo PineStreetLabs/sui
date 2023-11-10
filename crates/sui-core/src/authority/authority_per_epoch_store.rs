@@ -465,7 +465,7 @@ impl AuthorityEpochTables {
     fn load_reconfig_state(&self) -> SuiResult<ReconfigState> {
         let state = self
             .reconfig_state
-            .get(&RECONFIG_STATE_INDEX)?
+            .get(&RECONFIG_STATE_INDEX).map_err(|_| SuiError::StorageError)?
             .unwrap_or_default();
         Ok(state)
     }
@@ -479,23 +479,23 @@ impl AuthorityEpochTables {
 
     pub fn reset_db_for_execution_since_genesis(&self) -> SuiResult {
         // TODO: Add new tables that get added to the db automatically
-        self.executed_transactions_to_checkpoint.unsafe_clear()?;
+        self.executed_transactions_to_checkpoint.unsafe_clear().map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
     /// WARNING: This method is very subtle and can corrupt the database if used incorrectly.
     /// It should only be used in one-off cases or tests after fully understanding the risk.
     pub fn remove_executed_tx_subtle(&self, digest: &TransactionDigest) -> SuiResult {
-        self.executed_transactions_to_checkpoint.remove(digest)?;
+        self.executed_transactions_to_checkpoint.remove(digest).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
     pub fn get_last_consensus_index(&self) -> SuiResult<Option<ExecutionIndicesWithHash>> {
-        Ok(self.last_consensus_index.get(&LAST_CONSENSUS_STATS_ADDR)?)
+        Ok(self.last_consensus_index.get(&LAST_CONSENSUS_STATS_ADDR).map_err(|_| SuiError::StorageError)?)
     }
 
     pub fn get_last_consensus_stats(&self) -> SuiResult<Option<ExecutionIndicesWithStats>> {
-        Ok(self.last_consensus_stats.get(&LAST_CONSENSUS_STATS_ADDR)?)
+        Ok(self.last_consensus_stats.get(&LAST_CONSENSUS_STATS_ADDR).map_err(|_| SuiError::StorageError)?)
     }
 }
 
@@ -716,7 +716,7 @@ impl AuthorityPerEpochStore {
         &self,
         checkpoint: &CheckpointSequenceNumber,
     ) -> SuiResult<Option<Accumulator>> {
-        Ok(self.tables.state_hash_by_checkpoint.get(checkpoint)?)
+        Ok(self.tables.state_hash_by_checkpoint.get(checkpoint).map_err(|_| SuiError::StorageError)?)
     }
 
     pub fn insert_state_hash_for_checkpoint(
@@ -727,7 +727,7 @@ impl AuthorityPerEpochStore {
         Ok(self
             .tables
             .state_hash_by_checkpoint
-            .insert(checkpoint, accumulator)?)
+            .insert(checkpoint, accumulator).map_err(|_| SuiError::StorageError)?)
     }
 
     pub fn reference_gas_price(&self) -> u64 {
@@ -762,7 +762,7 @@ impl AuthorityPerEpochStore {
     pub fn store_reconfig_state(&self, new_state: &ReconfigState) -> SuiResult {
         self.tables
             .reconfig_state
-            .insert(&RECONFIG_STATE_INDEX, new_state)?;
+            .insert(&RECONFIG_STATE_INDEX, new_state).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -774,7 +774,7 @@ impl AuthorityPerEpochStore {
         batch.insert_batch(
             &self.tables.reconfig_state,
             [(&RECONFIG_STATE_INDEX, new_state)],
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -782,7 +782,7 @@ impl AuthorityPerEpochStore {
         Ok(self
             .tables
             .signed_transactions
-            .insert(transaction.digest(), transaction.serializable_ref())?)
+            .insert(transaction.digest(), transaction.serializable_ref()).map_err(|_| SuiError::StorageError)?)
     }
 
     #[cfg(test)]
@@ -797,7 +797,7 @@ impl AuthorityPerEpochStore {
         Ok(self
             .tables
             .signed_transactions
-            .get(tx_digest)?
+            .get(tx_digest).map_err(|_| SuiError::StorageError)?
             .map(|t| t.into()))
     }
 
@@ -813,15 +813,15 @@ impl AuthorityPerEpochStore {
             batch.insert_batch(
                 &self.tables.transaction_cert_signatures,
                 [(tx_digest, cert_sig)],
-            )?;
+            ).map_err(|_| SuiError::StorageError)?;
         }
         if let Some(effects_signature) = effects_signature {
             batch.insert_batch(
                 &self.tables.effects_signatures,
                 [(tx_digest, effects_signature)],
-            )?;
+            ).map_err(|_| SuiError::StorageError)?;
         }
-        batch.write()?;
+        batch.write().map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -836,7 +836,7 @@ impl AuthorityPerEpochStore {
         &self,
         tx_digest: &TransactionDigest,
     ) -> SuiResult<Option<AuthoritySignInfo>> {
-        Ok(self.tables.effects_signatures.get(tx_digest)?)
+        Ok(self.tables.effects_signatures.get(tx_digest).map_err(|_| SuiError::StorageError)?)
     }
 
     pub fn get_transaction_cert_sig(
@@ -850,7 +850,7 @@ impl AuthorityPerEpochStore {
         &self,
         ids: impl Iterator<Item = &'a ObjectID>,
     ) -> SuiResult<Vec<Option<SequenceNumber>>> {
-        Ok(self.tables.next_shared_object_versions.multi_get(ids)?)
+        Ok(self.tables.next_shared_object_versions.multi_get(ids).map_err(|_| SuiError::StorageError)?)
     }
 
     pub fn get_last_consensus_index(&self) -> SuiResult<ExecutionIndicesWithHash> {
@@ -909,7 +909,7 @@ impl AuthorityPerEpochStore {
         let accumulators = self
             .tables
             .state_hash_by_checkpoint
-            .multi_get(checkpoints)?;
+            .multi_get(checkpoints).map_err(|_| SuiError::StorageError)?;
 
         // Zipping together registrations and accumulators ensures returned order is
         // the same as order of digests
@@ -940,7 +940,7 @@ impl AuthorityPerEpochStore {
 
     /// Deletes one pending certificate.
     pub fn remove_pending_execution(&self, digest: &TransactionDigest) -> SuiResult<()> {
-        self.tables.pending_execution.remove(digest)?;
+        self.tables.pending_execution.remove(digest).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -960,7 +960,7 @@ impl AuthorityPerEpochStore {
     ) -> SuiResult {
         self.tables
             .assigned_shared_object_versions
-            .insert(tx_digest, assigned_versions)?;
+            .insert(tx_digest, assigned_versions).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -973,8 +973,8 @@ impl AuthorityPerEpochStore {
         batch.insert_batch(
             &self.tables.executed_transactions_to_checkpoint,
             digests.iter().map(|d| (*d, sequence)),
-        )?;
-        batch.write()?;
+        ).map_err(|_| SuiError::StorageError)?;
+        batch.write().map_err(|_| SuiError::StorageError)?;
         trace!("Transactions {digests:?} finalized at checkpoint {sequence}");
         Ok(())
     }
@@ -986,7 +986,7 @@ impl AuthorityPerEpochStore {
         Ok(self
             .tables
             .executed_transactions_to_checkpoint
-            .contains_key(digest)?)
+            .contains_key(digest).map_err(|_| SuiError::StorageError)?)
     }
 
     pub fn get_transaction_checkpoint(
@@ -996,7 +996,7 @@ impl AuthorityPerEpochStore {
         Ok(self
             .tables
             .executed_transactions_to_checkpoint
-            .get(digest)?)
+            .get(digest).map_err(|_| SuiError::StorageError)?)
     }
 
     pub fn multi_get_transaction_checkpoint(
@@ -1006,7 +1006,7 @@ impl AuthorityPerEpochStore {
         Ok(self
             .tables
             .executed_transactions_to_checkpoint
-            .multi_get(digests)?
+            .multi_get(digests).map_err(|_| SuiError::StorageError)?
             .into_iter()
             .collect())
     }
@@ -1043,12 +1043,12 @@ impl AuthorityPerEpochStore {
         retry_transaction_forever!({
             // This code may still be correct without using a transaction snapshot, but I couldn't
             // convince myself of that.
-            let mut db_transaction = self.tables.next_shared_object_versions.transaction()?;
+            let mut db_transaction = self.tables.next_shared_object_versions.transaction().map_err(|_| SuiError::StorageError)?;
 
             let ids = objects_to_init.clone().map(|(id, _)| id);
 
             let next_versions =
-                db_transaction.multi_get(&self.tables.next_shared_object_versions, ids.clone())?;
+                db_transaction.multi_get(&self.tables.next_shared_object_versions, ids.clone()).map_err(|_| SuiError::StorageError)?;
 
             let uninitialized_objects: Vec<(ObjectID, SequenceNumber)> = next_versions
                 .iter()
@@ -1091,9 +1091,9 @@ impl AuthorityPerEpochStore {
                 "initializing next_shared_object_versions"
             );
             db_transaction
-                .insert_batch(&self.tables.next_shared_object_versions, versions_to_write)?;
+                .insert_batch(&self.tables.next_shared_object_versions, versions_to_write).map_err(|_| SuiError::StorageError)?;
             db_transaction.commit()
-        })?;
+        }).map_err(|_| SuiError::StorageError)?;
 
         Ok(ret)
     }
@@ -1125,7 +1125,7 @@ impl AuthorityPerEpochStore {
             .await?;
         self.tables
             .assigned_shared_object_versions
-            .insert(tx_digest, assigned_versions)?;
+            .insert(tx_digest, assigned_versions).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -1159,7 +1159,7 @@ impl AuthorityPerEpochStore {
     ) -> SuiResult {
         self.tables
             .pending_consensus_transactions
-            .insert(&transaction.key(), transaction)?;
+            .insert(&transaction.key(), transaction).map_err(|_| SuiError::StorageError)?;
         if let ConsensusTransactionKind::UserTransaction(cert) = &transaction.kind {
             let state = lock.expect("Must pass reconfiguration lock when storing certificate");
             // Caller is responsible for performing graceful check
@@ -1175,7 +1175,7 @@ impl AuthorityPerEpochStore {
     }
 
     pub fn remove_pending_consensus_transaction(&self, key: &ConsensusTransactionKey) -> SuiResult {
-        self.tables.pending_consensus_transactions.remove(key)?;
+        self.tables.pending_consensus_transactions.remove(key).map_err(|_| SuiError::StorageError)?;
         if let ConsensusTransactionKey::Certificate(cert) = key {
             self.pending_consensus_certificates.lock().remove(cert);
         }
@@ -1225,7 +1225,7 @@ impl AuthorityPerEpochStore {
         &self,
         key: &SequencedConsensusTransactionKey,
     ) -> SuiResult<bool> {
-        Ok(self.tables.consensus_message_processed.contains_key(key)?)
+        Ok(self.tables.consensus_message_processed.contains_key(key).map_err(|_| SuiError::StorageError)?)
     }
 
     pub async fn consensus_message_processed_notify(
@@ -1247,7 +1247,7 @@ impl AuthorityPerEpochStore {
         Ok(self
             .tables
             .consensus_message_processed
-            .multi_contains_keys(keys)?)
+            .multi_contains_keys(keys).map_err(|_| SuiError::StorageError)?)
     }
 
     pub async fn consensus_messages_processed_notify(
@@ -1282,7 +1282,7 @@ impl AuthorityPerEpochStore {
         let signatures = self
             .tables
             .user_signatures_for_checkpoints
-            .multi_get(digests)?;
+            .multi_get(digests).map_err(|_| SuiError::StorageError)?;
         let mut result = Vec::with_capacity(digests.len());
         for (signatures, digest) in signatures.into_iter().zip(digests.iter()) {
             let Some(signatures) = signatures else {
@@ -1306,7 +1306,7 @@ impl AuthorityPerEpochStore {
         );
         self.tables
             .override_protocol_upgrade_buffer_stake
-            .remove(&OVERRIDE_PROTOCOL_UPGRADE_BUFFER_STAKE_INDEX)?;
+            .remove(&OVERRIDE_PROTOCOL_UPGRADE_BUFFER_STAKE_INDEX).map_err(|_| SuiError::StorageError)?;
         self.update_buffer_stake_metric();
         Ok(())
     }
@@ -1320,7 +1320,7 @@ impl AuthorityPerEpochStore {
         self.tables.override_protocol_upgrade_buffer_stake.insert(
             &OVERRIDE_PROTOCOL_UPGRADE_BUFFER_STAKE_INDEX,
             &new_stake_bps,
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         self.update_buffer_stake_metric();
         Ok(())
     }
@@ -1349,7 +1349,7 @@ impl AuthorityPerEpochStore {
         let authority = &capabilities.authority;
 
         // Read-compare-write pattern assumes we are only called from the consensus handler task.
-        if let Some(cap) = self.tables.authority_capabilities.get(authority)? {
+        if let Some(cap) = self.tables.authority_capabilities.get(authority).map_err(|_| SuiError::StorageError)? {
             if cap.generation >= capabilities.generation {
                 debug!(
                     "ignoring new capabilities {:?} in favor of previous capabilities {:?}",
@@ -1360,7 +1360,7 @@ impl AuthorityPerEpochStore {
         }
         self.tables
             .authority_capabilities
-            .insert(authority, capabilities)?;
+            .insert(authority, capabilities).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -1409,7 +1409,7 @@ impl AuthorityPerEpochStore {
         batch.insert_batch(
             &self.tables.pending_jwks,
             std::iter::once(((authority, id.clone(), jwk.clone()), ())),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         let key = (id.clone(), jwk.clone());
         let previously_active = jwk_aggregator.has_quorum_for_key(&key);
@@ -1420,7 +1420,7 @@ impl AuthorityPerEpochStore {
             batch.insert_batch(
                 &self.tables.active_jwks,
                 std::iter::once(((round, key), ())),
-            )?;
+            ).map_err(|_| SuiError::StorageError)?;
         }
 
         Ok(())
@@ -1540,7 +1540,7 @@ impl AuthorityPerEpochStore {
         write_batch.insert_batch(
             &self.tables.assigned_shared_object_versions,
             iter::once((tx_digest, assigned_versions)),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         self.finish_consensus_certificate_process_with_batch(write_batch, certificate)?;
         Ok(())
@@ -1552,7 +1552,7 @@ impl AuthorityPerEpochStore {
         batch: &mut DBBatch,
         key: SequencedConsensusTransactionKey,
     ) -> SuiResult {
-        batch.insert_batch(&self.tables.consensus_message_processed, [(key, true)])?;
+        batch.insert_batch(&self.tables.consensus_message_processed, [(key, true)]).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -1572,11 +1572,11 @@ impl AuthorityPerEpochStore {
                     hash: consensus_stats.hash,
                 },
             )],
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         batch.insert_batch(
             &self.tables.last_consensus_stats,
             [(LAST_CONSENSUS_STATS_ADDR, consensus_stats)],
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -1606,17 +1606,17 @@ impl AuthorityPerEpochStore {
         batch.insert_batch(
             &self.tables.pending_execution,
             [(*certificate.digest(), certificate.clone().serializable())],
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         // User signatures are written in the same batch as consensus certificate processed flag,
         // which means we won't attempt to insert this twice for the same tx digest
         debug_assert!(!self
             .tables
             .user_signatures_for_checkpoints
-            .contains_key(certificate.digest())?);
+            .contains_key(certificate.digest()).map_err(|_| SuiError::StorageError)?);
         batch.insert_batch(
             &self.tables.user_signatures_for_checkpoints,
             [(*certificate.digest(), certificate.tx_signatures().to_vec())],
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -1624,7 +1624,7 @@ impl AuthorityPerEpochStore {
         Ok(self
             .tables
             .final_epoch_checkpoint
-            .get(&FINAL_EPOCH_CHECKPOINT_INDEX)?)
+            .get(&FINAL_EPOCH_CHECKPOINT_INDEX).map_err(|_| SuiError::StorageError)?)
     }
 
     pub fn get_reconfig_state_read_lock_guard(
@@ -1868,7 +1868,7 @@ impl AuthorityPerEpochStore {
 
         self.write_pending_checkpoint(&mut batch, &pending_checkpoint)?;
 
-        batch.write()?;
+        batch.write().map_err(|_| SuiError::StorageError)?;
 
         self.process_notifications(&notifications, &end_of_publish_transactions);
 
@@ -2008,7 +2008,7 @@ impl AuthorityPerEpochStore {
         batch.insert_batch(
             &self.tables.next_shared_object_versions,
             shared_input_next_versions.into_iter(),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         let lock_and_final_round =
             self.process_end_of_publish_transactions(batch, end_of_publish_transactions)?;
@@ -2049,7 +2049,7 @@ impl AuthorityPerEpochStore {
                         .get_reconfig_state_read_lock_guard()
                         .should_accept_consensus_certs()
                 {
-                    write_batch.insert_batch(&self.tables.end_of_publish, [(authority, ())])?;
+                    write_batch.insert_batch(&self.tables.end_of_publish, [(authority, ())]).map_err(|_| SuiError::StorageError)?;
                     self.end_of_publish.try_lock()
                         .expect("No contention on Authority::end_of_publish as it is only accessed from consensus handler")
                         .insert_generic(*authority, ()).is_quorum_reached()
@@ -2075,7 +2075,7 @@ impl AuthorityPerEpochStore {
                             &FINAL_EPOCH_CHECKPOINT_INDEX,
                             &consensus_index.last_committed_round,
                         )],
-                    )?;
+                    ).map_err(|_| SuiError::StorageError)?;
                     // Holding this lock until end of this function where we write batch to DB
                     ret = Some((lock, consensus_index.last_committed_round));
                 };
@@ -2261,7 +2261,7 @@ impl AuthorityPerEpochStore {
         batch: &mut DBBatch,
         checkpoint: &PendingCheckpoint,
     ) -> SuiResult {
-        if let Some(pending) = self.get_pending_checkpoint(&checkpoint.height())? {
+        if let Some(pending) = self.get_pending_checkpoint(&checkpoint.height()).map_err(|_| SuiError::StorageError)? {
             if pending.roots != checkpoint.roots {
                 panic!("Received checkpoint at index {} that contradicts previously stored checkpoint. Old digests: {:?}, new digests: {:?}", checkpoint.height(), pending.roots, checkpoint.roots);
             }
@@ -2285,7 +2285,7 @@ impl AuthorityPerEpochStore {
         batch.insert_batch(
             &self.tables.pending_checkpoints,
             std::iter::once((checkpoint.height(), checkpoint)),
-        )?;
+        ).map_err(|_| SuiError::StorageError)?;
 
         Ok(())
     }
@@ -2356,7 +2356,7 @@ impl AuthorityPerEpochStore {
             );
             self.tables
                 .builder_digest_to_checkpoint
-                .insert(&digest, &sequence)?;
+                .insert(&digest, &sequence).map_err(|_| SuiError::StorageError)?;
         }
         let builder_summary = BuilderCheckpointSummary {
             summary: summary.clone(),
@@ -2365,7 +2365,7 @@ impl AuthorityPerEpochStore {
         };
         self.tables
             .builder_checkpoint_summary_v2
-            .insert(summary.sequence_number(), &builder_summary)?;
+            .insert(summary.sequence_number(), &builder_summary).map_err(|_| SuiError::StorageError)?;
         Ok(())
     }
 
@@ -2397,7 +2397,7 @@ impl AuthorityPerEpochStore {
         Ok(self
             .tables
             .builder_checkpoint_summary_v2
-            .get(&sequence)?
+            .get(&sequence).map_err(|_| SuiError::StorageError)?
             .map(|s| s.summary))
     }
 
@@ -2541,7 +2541,7 @@ impl GetSharedLocks for AuthorityPerEpochStore {
         Ok(self
             .tables
             .assigned_shared_object_versions
-            .get(transaction_digest)?
+            .get(transaction_digest).map_err(|_| SuiError::StorageError)?
             .unwrap_or_default())
     }
 }

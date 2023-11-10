@@ -57,7 +57,7 @@ impl RocksDbStore {
     }
 
     pub fn get_last_executed_checkpoint(&self) -> Result<Option<VerifiedCheckpoint>, SuiError> {
-        Ok(self.checkpoint_store.get_highest_executed_checkpoint()?)
+        Ok(self.checkpoint_store.get_highest_executed_checkpoint().map_err(|_| SuiError::StorageError)?)
     }
 }
 
