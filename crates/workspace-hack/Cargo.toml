@@ -715,7 +715,7 @@ tower-layer = { version = "0.3", default-features = false }
 tower-service = { version = "0.3", default-features = false }
 tracing = { version = "0.1", features = ["log"] }
 tracing-appender = { version = "0.2", default-features = false }
-tracing-core = { version = "0.1" }
+tracing-core = { version = "0.1.30" }
 tracing-error = { version = "0.2" }
 tracing-log = { version = "0.1", default-features = false, features = ["log-tracer", "std"] }
 tracing-opentelemetry = { version = "0.21" }
