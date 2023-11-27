@@ -26,7 +26,6 @@ use sui_types::transaction::{
     CallArg, CertifiedTransaction, Transaction, TransactionData, VerifiedCertificate,
     VerifiedTransaction, TEST_ONLY_GAS_UNIT_FOR_TRANSFER,
 };
-use sui_types::utils::get_zklogin_user_address;
 use sui_types::utils::{
     make_zklogin_tx, to_sender_signed_transaction, to_sender_signed_transaction_with_multi_signers,
 };
@@ -189,7 +188,7 @@ async fn test_zklogin_transaction_disabled() {
             .build(),
     )
     .await;
-    let (_, tx, _) = make_zklogin_tx(get_zklogin_user_address(), false);
+    let (_, tx, _) = make_zklogin_tx(false);
     assert_denied(&process_zklogin_tx(tx, &state).await);
 
     let (_, state1) = setup_test(
@@ -198,7 +197,7 @@ async fn test_zklogin_transaction_disabled() {
             .build(),
     )
     .await;
-    let (_, tx1, _) = make_zklogin_tx(get_zklogin_user_address(), false);
+    let (_, tx1, _) = make_zklogin_tx(false);
     assert_denied(&process_zklogin_tx(tx1, &state1).await);
 }
 

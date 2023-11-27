@@ -4,7 +4,7 @@
 import { ErrorBoundary } from '_components/error-boundary';
 import { MenuContent } from '_components/menu';
 import { Navigation } from '_components/navigation';
-import cn from 'clsx';
+import cn from 'classnames';
 import { createContext, useState, type ReactNode } from 'react';
 
 import { WalletSettingsButton } from '../../components/menu/button/WalletSettingsButton';

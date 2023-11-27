@@ -91,7 +91,7 @@ function AccountFooter({ accountID, showExport }: { accountID: string; showExpor
 					{showExport ? (
 						<FooterLink to={`/accounts/export/${accountID}`}>Export Private Key</FooterLink>
 					) : null}
-					{allAccounts.isPending ? null : (
+					{allAccounts.isLoading ? null : (
 						<FooterLink
 							onClick={() => setIsConfirmationVisible(true)}
 							disabled={isConfirmationVisible}
@@ -125,7 +125,7 @@ function AccountFooter({ accountID, showExport }: { accountID: string; showExpor
 								variant="warning"
 								size="tall"
 								text="Remove"
-								loading={removeAccountMutation.isPending}
+								loading={removeAccountMutation.isLoading}
 								onClick={() => {
 									removeAccountMutation.mutate(undefined, {
 										onSuccess: () => toast.success('Account removed'),
@@ -169,7 +169,7 @@ export function AccountGroup({
 							<div className="h-px bg-gray-45 flex flex-1 flex-shrink-0" />
 							{isMnemonicDerivedGroup && accountSource ? (
 								<ButtonOrLink
-									loading={createAccountMutation.isPending}
+									loading={createAccountMutation.isLoading}
 									onClick={async (e) => {
 										// prevent the collapsible from closing when clicking the "new" button
 										e.stopPropagation();

@@ -80,9 +80,9 @@ export function TransferNFTForm({
 			);
 		},
 		onSuccess: (response) => {
-			queryClient.invalidateQueries({ queryKey: ['object', objectId] });
-			queryClient.invalidateQueries({ queryKey: ['get-kiosk-contents'] });
-			queryClient.invalidateQueries({ queryKey: ['get-owned-objects'] });
+			queryClient.invalidateQueries(['object', objectId]);
+			queryClient.invalidateQueries(['get-kiosk-contents']);
+			queryClient.invalidateQueries(['get-owned-objects']);
 
 			ampli.sentCollectible({ objectId });
 
@@ -141,7 +141,7 @@ export function TransferNFTForm({
 							<Button
 								type="submit"
 								variant="primary"
-								loading={transferNFT.isPending}
+								loading={transferNFT.isLoading}
 								disabled={!isValid}
 								size="tall"
 								text="Send NFT Now"

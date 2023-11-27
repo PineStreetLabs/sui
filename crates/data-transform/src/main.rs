@@ -11,8 +11,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use move_bytecode_utils::module_cache::SyncModuleCache;
-use move_core_types::annotated_value::MoveStruct;
+use move_core_types::value::MoveStruct;
 use sui_types::object::MoveObject;
+use sui_types::object::ObjectFormatOptions;
 
 use self::models::*;
 use std::env;
@@ -282,7 +283,11 @@ fn main() {
                 // JSON parsing starts here
                 let type_ = parse_sui_struct_tag(&event.event_type).expect("cannot load StructTag");
 
-                let layout = MoveObject::get_layout_from_struct_tag(type_.clone(), &module_cache);
+                let layout = MoveObject::get_layout_from_struct_tag(
+                    type_.clone(),
+                    ObjectFormatOptions::default(),
+                    &module_cache,
+                );
 
                 match layout {
                     Ok(l) => {

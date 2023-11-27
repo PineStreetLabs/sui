@@ -20,7 +20,7 @@ export function WelcomePage() {
 	const isFullscreenGuardLoading = useFullscreenGuard(true);
 	const isInitializedLoading = useInitializedGuard(
 		false,
-		!(createAccountsMutation.isPending || createAccountsMutation.isSuccess),
+		!(createAccountsMutation.isLoading || createAccountsMutation.isSuccess),
 	);
 	const [, setAccountsFormValues] = useAccountsFormContext();
 	const navigate = useNavigate();
@@ -75,7 +75,7 @@ export function WelcomePage() {
 						size="tall"
 						variant="secondary"
 						text="More Options"
-						disabled={createAccountsMutation.isPending || createAccountsMutation.isSuccess}
+						disabled={createAccountsMutation.isLoading || createAccountsMutation.isSuccess}
 					/>
 				</div>
 			</div>

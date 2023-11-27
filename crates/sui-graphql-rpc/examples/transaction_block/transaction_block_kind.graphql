@@ -23,7 +23,11 @@
           storageRebate
         }
         ... on GenesisTransaction {
-          objects
+          objects {
+            owner {
+              location
+            }
+          }
         }
       }
     }

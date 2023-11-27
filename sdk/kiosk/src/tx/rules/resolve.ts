@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { type RuleResolvingParams } from '../../types';
+import { objArg } from '../../utils';
 import { lock } from '../kiosk';
 
 /**
@@ -10,7 +11,7 @@ import { lock } from '../kiosk';
 export function resolveRoyaltyRule(params: RuleResolvingParams) {
 	const { transactionBlock: txb, itemType, price, packageId, transferRequest, policyId } = params;
 
-	const policyObj = txb.object(policyId);
+	const policyObj = objArg(txb, policyId);
 
 	// calculates the amount
 	const [amount] = txb.moveCall({
@@ -50,7 +51,7 @@ export function resolveKioskLockRule(params: RuleResolvingParams) {
 	txb.moveCall({
 		target: `${packageId}::kiosk_lock_rule::prove`,
 		typeArguments: [itemType],
-		arguments: [transferRequest, txb.object(kiosk)],
+		arguments: [transferRequest, objArg(txb, kiosk)],
 	});
 }
 
@@ -67,7 +68,7 @@ export function resolvePersonalKioskRule(params: RuleResolvingParams) {
 	txb.moveCall({
 		target: `${packageId}::personal_kiosk_rule::prove`,
 		typeArguments: [itemType],
-		arguments: [txb.object(kiosk), transferRequest],
+		arguments: [objArg(txb, kiosk), transferRequest],
 	});
 }
 
@@ -81,6 +82,6 @@ export function resolveFloorPriceRule(params: RuleResolvingParams) {
 	txb.moveCall({
 		target: `${packageId}::floor_price_rule::prove`,
 		typeArguments: [itemType],
-		arguments: [txb.object(policyId), transferRequest],
+		arguments: [objArg(txb, policyId), transferRequest],
 	});
 }

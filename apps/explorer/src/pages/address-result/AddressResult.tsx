@@ -22,11 +22,11 @@ const LEFT_RIGHT_PANEL_MIN_SIZE = 30;
 const TOP_PANEL_MIN_SIZE = 20;
 
 function AddressResultPageHeader({ address, loading }: { address: string; loading?: boolean }) {
-	const { data: domainName, isLoading } = useResolveSuiNSName(address);
+	const { data: domainName, isFetching } = useResolveSuiNSName(address);
 
 	return (
 		<PageHeader
-			loading={loading || isLoading}
+			loading={loading || isFetching}
 			type="Address"
 			title={address}
 			subtitle={domainName}
@@ -37,9 +37,9 @@ function AddressResultPageHeader({ address, loading }: { address: string; loadin
 }
 
 function SuiNSAddressResultPageHeader({ name }: { name: string }) {
-	const { data: address, isLoading } = useResolveSuiNSAddress(name);
+	const { data: address, isFetching } = useResolveSuiNSAddress(name);
 
-	return <AddressResultPageHeader address={address ?? name} loading={isLoading} />;
+	return <AddressResultPageHeader address={address ?? name} loading={isFetching} />;
 }
 
 function AddressResult({ address }: { address: string }) {

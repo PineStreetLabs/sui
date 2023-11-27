@@ -1,17 +1,19 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { SharedObjectRef } from '@mysten/sui.js/bcs';
 import {
 	getFullnodeUrl,
 	OrderArguments,
 	PaginatedEvents,
 	PaginationArguments,
 	SuiClient,
+	SuiObjectRef,
 } from '@mysten/sui.js/client';
-import { TransactionObjectInput } from '@mysten/sui.js/src/builder';
 import {
 	TransactionArgument,
 	TransactionBlock,
+	TransactionObjectArgument,
 	TransactionResult,
 } from '@mysten/sui.js/transactions';
 import {
@@ -20,6 +22,7 @@ import {
 	normalizeSuiObjectId,
 	parseStructTag,
 	SUI_CLOCK_OBJECT_ID,
+	SUI_FRAMEWORK_ADDRESS,
 } from '@mysten/sui.js/utils';
 
 import {
@@ -43,6 +46,29 @@ import {
 } from './utils';
 
 const DUMMY_ADDRESS = normalizeSuiAddress('0x0');
+
+function objArg(
+	txb: TransactionBlock,
+	arg: string | SharedObjectRef | SuiObjectRef | TransactionObjectArgument,
+): TransactionObjectArgument {
+	if (typeof arg === 'string') {
+		return txb.object(arg);
+	}
+
+	if ('digest' in arg && 'version' in arg && 'objectId' in arg) {
+		return txb.objectRef(arg);
+	}
+
+	if ('objectId' in arg && 'initialSharedVersion' in arg && 'mutable' in arg) {
+		return txb.sharedObjectRef(arg);
+	}
+
+	if ('kind' in arg) {
+		return arg;
+	}
+
+	throw new Error('Invalid argument type');
+}
 
 export class DeepBookClient {
 	#poolTypeArgsCache: Map<string, string[]> = new Map();
@@ -300,8 +326,8 @@ export class DeepBookClient {
 		poolId: string,
 		quantity: bigint,
 		orderType: 'bid' | 'ask',
-		baseCoin: TransactionResult | string | undefined = undefined,
-		quoteCoin: TransactionResult | string | undefined = undefined,
+		baseCoin: TransactionResult | TransactionObjectArgument | string | undefined = undefined,
+		quoteCoin: TransactionResult | TransactionObjectArgument | string | undefined = undefined,
 		clientOrderId: string | undefined = undefined,
 		recipientAddress: string | undefined = this.currentAddress,
 		txb: TransactionBlock = new TransactionBlock(),
@@ -327,8 +353,8 @@ export class DeepBookClient {
 				txb.pure.u64(clientOrderId ?? this.#nextClientOrderId()),
 				txb.pure.u64(quantity),
 				txb.pure.bool(orderType === 'bid'),
-				baseCoin ? txb.object(baseCoin) : emptyCoin,
-				quoteCoin ? txb.object(quoteCoin) : emptyCoin,
+				baseCoin ? objArg(txb, baseCoin) : emptyCoin,
+				quoteCoin ? objArg(txb, quoteCoin) : emptyCoin,
 				txb.object(SUI_CLOCK_OBJECT_ID),
 			],
 		});
@@ -351,7 +377,7 @@ export class DeepBookClient {
 	 */
 	async swapExactQuoteForBase(
 		poolId: string,
-		tokenObjectIn: TransactionObjectInput,
+		tokenObjectIn: TransactionResult | TransactionObjectArgument | string,
 		amountIn: bigint, // quantity of USDC
 		currentAddress: string,
 		clientOrderId?: string,
@@ -367,7 +393,7 @@ export class DeepBookClient {
 				txb.object(this.#checkAccountCap()),
 				txb.pure.u64(String(amountIn)),
 				txb.object(SUI_CLOCK_OBJECT_ID),
-				txb.object(tokenObjectIn),
+				objArg(txb, tokenObjectIn),
 			],
 		});
 		txb.transferObjects([base_coin_ret], currentAddress);
@@ -564,7 +590,7 @@ export class DeepBookClient {
 		txb.moveCall({
 			typeArguments: await this.getPoolTypeArgs(poolId),
 			target: `${PACKAGE_ID}::${MODULE_CLOB}::get_order_status`,
-			arguments: [txb.object(poolId), txb.pure.u64(orderId), txb.object(cap)],
+			arguments: [txb.object(poolId), txb.object(orderId), txb.object(cap)],
 		});
 		const results = (
 			await this.suiClient.devInspectTransactionBlock({
@@ -726,11 +752,10 @@ export class DeepBookClient {
 
 		const parsed = resp.data?.type != null ? parseStructTag(resp.data.type) : null;
 
-		// Modification handle case like 0x2::coin::Coin<0xf398b9ecb31aed96c345538fb59ca5a1a2c247c5e60087411ead6c637129f1c4::fish::FISH>
-		return parsed?.address === NORMALIZED_SUI_COIN_TYPE.split('::')[0] &&
+		return parsed?.address === SUI_FRAMEWORK_ADDRESS &&
 			parsed.module === 'coin' &&
 			parsed.name === 'Coin'
-			? parsed.typeParams[0] + '::' + parsed.module + '::' + parsed.name
+			? parsed.typeParams[0]
 			: null;
 	}
 

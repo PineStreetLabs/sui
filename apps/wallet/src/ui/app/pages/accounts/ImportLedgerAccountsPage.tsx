@@ -9,7 +9,7 @@ import {
 	ThumbUpStroke32 as ThumbUpIcon,
 	LockUnlocked16 as UnlockedLockIcon,
 } from '@mysten/icons';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -36,8 +36,7 @@ export function ImportLedgerAccountsPage() {
 	const [selectedLedgerAccounts, setSelectedLedgerAccounts] = useState<DerivedLedgerAccount[]>([]);
 	const {
 		data: ledgerAccounts,
-		error: ledgerError,
-		isPending: areLedgerAccountsLoading,
+		isLoading: areLedgerAccountsLoading,
 		isError: encounteredDerviceAccountsError,
 	} = useDeriveLedgerAccounts({
 		numAccountsToDerive: numLedgerAccountsToDeriveByDefault,
@@ -46,15 +45,11 @@ export function ImportLedgerAccountsPage() {
 				({ address }) => !existingAccounts?.some((account) => account.address === address),
 			);
 		},
-	});
-
-	useEffect(() => {
-		if (ledgerError) {
-			toast.error(getSuiApplicationErrorMessage(ledgerError) || 'Something went wrong.');
+		onError: (error) => {
+			toast.error(getSuiApplicationErrorMessage(error) || 'Something went wrong.');
 			navigate(-1);
-		}
-	}, [ledgerError, navigate]);
-
+		},
+	});
 	const onAccountClick = useCallback(
 		(targetAccount: SelectableLedgerAccount) => {
 			if (targetAccount.isSelected) {

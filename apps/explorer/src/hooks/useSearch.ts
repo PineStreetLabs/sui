@@ -145,6 +145,6 @@ export function useSearch(query: string) {
 			return results.map(({ value }) => value).flat();
 		},
 		enabled: !!query,
-		gcTime: 10000,
+		cacheTime: 10000,
 	});
 }

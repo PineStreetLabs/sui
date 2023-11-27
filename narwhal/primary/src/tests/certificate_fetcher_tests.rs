@@ -1,9 +1,9 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
-
+use crate::primary::NUM_SHUTDOWN_RECEIVERS;
 use crate::{
-    certificate_fetcher::CertificateFetcher, consensus::ConsensusRound, metrics::PrimaryMetrics,
-    primary::NUM_SHUTDOWN_RECEIVERS, synchronizer::Synchronizer, PrimaryChannelMetrics,
+    certificate_fetcher::CertificateFetcher, metrics::PrimaryMetrics, synchronizer::Synchronizer,
+    PrimaryChannelMetrics,
 };
 use anemo::async_trait;
 use anyhow::Result;
@@ -18,6 +18,8 @@ use prometheus::Registry;
 use std::{collections::BTreeSet, sync::Arc, time::Duration};
 use storage::CertificateStore;
 use storage::NodeStorage;
+
+use consensus::consensus::ConsensusRound;
 use test_utils::{get_protocol_config, latest_protocol_version, temp_dir, CommitteeFixture};
 use tokio::{
     sync::{
@@ -28,10 +30,10 @@ use tokio::{
 };
 use types::{
     BatchDigest, Certificate, CertificateAPI, CertificateDigest, FetchCertificatesRequest,
-    FetchCertificatesResponse, Header, HeaderAPI, HeaderDigest, HeaderV2, Metadata,
+    FetchCertificatesResponse, Header, HeaderAPI, HeaderDigest, HeaderV1, Metadata,
     PreSubscribedBroadcastSender, PrimaryToPrimary, PrimaryToPrimaryServer, RequestVoteRequest,
     RequestVoteResponse, Round, SendCertificateRequest, SendCertificateResponse,
-    SendRandomnessPartialSignaturesRequest, SignatureVerificationState, SystemMessage,
+    SignatureVerificationState,
 };
 
 pub struct NetworkProxy {
@@ -55,13 +57,6 @@ impl PrimaryToPrimary for NetworkProxy {
         &self,
         _request: anemo::Request<RequestVoteRequest>,
     ) -> Result<anemo::Response<RequestVoteResponse>, anemo::rpc::Status> {
-        unimplemented!()
-    }
-
-    async fn send_randomness_partial_signatures(
-        &self,
-        _request: anemo::Request<SendRandomnessPartialSignaturesRequest>,
-    ) -> Result<anemo::Response<()>, anemo::rpc::Status> {
         unimplemented!()
     }
 
@@ -183,7 +178,6 @@ struct BadHeader {
     pub round: Round,
     pub epoch: Epoch,
     pub payload: IndexMap<BatchDigest, WorkerId>,
-    pub system_messages: Vec<SystemMessage>,
     pub parents: BTreeSet<CertificateDigest>,
     pub id: OnceCell<HeaderDigest>,
     pub metadata: Metadata,
@@ -446,9 +440,9 @@ async fn fetch_certificates_v1_basic() {
     let mut cert = certificates[num_written].clone();
     // This is a bit tedious to craft
     let cert_header =
-        unsafe { std::mem::transmute::<HeaderV2, BadHeader>(cert.header().clone().unwrap_v2()) };
+        unsafe { std::mem::transmute::<HeaderV1, BadHeader>(cert.header().clone().unwrap_v1()) };
     let wrong_header = BadHeader { ..cert_header };
-    let wolf_header = unsafe { std::mem::transmute::<BadHeader, HeaderV2>(wrong_header) };
+    let wolf_header = unsafe { std::mem::transmute::<BadHeader, HeaderV1>(wrong_header) };
     cert.update_header(wolf_header.into());
     certs.push(cert);
     // Add cert without all parents in storage.
@@ -742,9 +736,9 @@ async fn fetch_certificates_v2_basic() {
     let mut cert = certificates[num_written].clone();
     // This is a bit tedious to craft
     let cert_header =
-        unsafe { std::mem::transmute::<HeaderV2, BadHeader>(cert.header().clone().unwrap_v2()) };
+        unsafe { std::mem::transmute::<HeaderV1, BadHeader>(cert.header().clone().unwrap_v1()) };
     let wrong_header = BadHeader { ..cert_header };
-    let wolf_header = unsafe { std::mem::transmute::<BadHeader, HeaderV2>(wrong_header) };
+    let wolf_header = unsafe { std::mem::transmute::<BadHeader, HeaderV1>(wrong_header) };
     cert.update_header(Header::from(wolf_header));
     certs.push(cert);
     // Add cert without all parents in storage.
@@ -759,7 +753,8 @@ async fn fetch_certificates_v2_basic() {
     sleep(Duration::from_secs(1)).await;
     verify_certificates_not_in_store(&certificate_store, &certificates[num_written..target_index]);
 
-    // Send out a batch of certificates with bad signatures for all certificates.
+    // Send out a batch of certificates with bad signatures for parent certificates.
+    // and bad signatures for non-parent certificates.
     let mut certs = Vec::new();
     for cert in certificates.iter().skip(num_written).take(204) {
         let mut cert = cert.clone();
@@ -791,10 +786,18 @@ async fn fetch_certificates_v2_basic() {
     sleep(Duration::from_secs(1)).await;
     verify_certificates_not_in_store(&certificate_store, &certificates[num_written..target_index]);
 
-    // Send out a batch of certificates with good signatures.
-    // The certificates 4 + 62 + 58 + 204 = 328 should become available in store eventually.let mut certs = Vec::new();
+    // Send out a batch of certificates with good signatures for leaves and
+    // bad signatures for parent certificates.
     let mut certs = Vec::new();
-    for cert in certificates.iter().skip(num_written).take(204) {
+    for cert in certificates.iter().skip(num_written).take(200) {
+        let mut cert = cert.clone();
+        cert.set_signature_verification_state(SignatureVerificationState::Unverified(
+            AggregateSignatureBytes::default(),
+        ));
+        certs.push(cert);
+    }
+
+    for cert in certificates.iter().skip(num_written + 200).take(4) {
         certs.push(cert.clone());
     }
     tx_fetch_resp
@@ -803,15 +806,12 @@ async fn fetch_certificates_v2_basic() {
         })
         .unwrap();
 
+    // The certificates 4 + 62 + 58 + 204 = 328 should become available in store eventually.
     verify_certificates_v2_in_store(
         &certificate_store,
         &certificates[0..(target_index)],
-        18,  // 14 fetched certs verified directly + the initial 4 inserted
-        310, // to be verified indirectly
+        14,  // 10 fetched certs verified directly + the initial 4 inserted
+        314, // verified indirectly
     )
     .await;
-
-    // Additional testcases cannot be added, because it seems impossible now to receive from
-    // the tx_fetch_resp channel after a certain number of messages.
-    // TODO: find the root cause of this issue.
 }

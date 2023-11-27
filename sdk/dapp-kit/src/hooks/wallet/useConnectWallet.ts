@@ -7,7 +7,7 @@ import type {
 	WalletAccount,
 	WalletWithRequiredFeatures,
 } from '@mysten/wallet-standard';
-import type { UseMutationOptions, UseMutationResult } from '@tanstack/react-query';
+import type { UseMutationOptions } from '@tanstack/react-query';
 import { useMutation } from '@tanstack/react-query';
 
 import { walletMutationKeys } from '../../constants/walletMutationKeys.js';
@@ -34,12 +34,7 @@ type UseConnectWalletMutationOptions = Omit<
 export function useConnectWallet({
 	mutationKey,
 	...mutationOptions
-}: UseConnectWalletMutationOptions = {}): UseMutationResult<
-	ConnectWalletResult,
-	Error,
-	ConnectWalletArgs,
-	unknown
-> {
+}: UseConnectWalletMutationOptions = {}) {
 	const setWalletConnected = useWalletStore((state) => state.setWalletConnected);
 	const setConnectionStatus = useWalletStore((state) => state.setConnectionStatus);
 

@@ -17,10 +17,10 @@ export function RecoverPage() {
 	const navigate = useNavigate();
 	const mnemonicAccountSource = allAccountSources.data?.find(({ type }) => type === 'mnemonic');
 	useEffect(() => {
-		if (!allAccountSources.isPending && !mnemonicAccountSource) {
+		if (!allAccountSources.isLoading && !mnemonicAccountSource) {
 			navigate('/', { replace: true });
 		}
-	}, [allAccountSources.isPending, mnemonicAccountSource, navigate]);
+	}, [allAccountSources.isLoading, mnemonicAccountSource, navigate]);
 	const recoveryDataMutation = useRecoveryDataMutation();
 	if (!mnemonicAccountSource) {
 		return null;

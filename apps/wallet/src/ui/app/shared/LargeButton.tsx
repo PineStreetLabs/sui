@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import LoadingIndicator from '_components/loading/LoadingIndicator';
-import clsx from 'clsx';
+import clsx from 'classnames';
 import { forwardRef, type ReactNode, type Ref } from 'react';
 
 import { ButtonOrLink, type ButtonOrLinkProps } from './utils/ButtonOrLink';

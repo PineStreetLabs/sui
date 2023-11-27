@@ -5,8 +5,11 @@ use better_any::{Tid, TidAble};
 use linked_hash_map::LinkedHashMap;
 use move_binary_format::errors::{PartialVMError, PartialVMResult};
 use move_core_types::{
-    account_address::AccountAddress, annotated_value as A, effects::Op,
-    language_storage::StructTag, runtime_value as R, vm_status::StatusCode,
+    account_address::AccountAddress,
+    effects::Op,
+    language_storage::StructTag,
+    value::{MoveStruct, MoveTypeLayout, MoveValue},
+    vm_status::StatusCode,
 };
 use move_vm_types::{
     loaded_data::runtime_types::Type,
@@ -342,8 +345,8 @@ impl<'a> ObjectRuntime<'a> {
         parent: ObjectID,
         child: ObjectID,
         child_ty: &Type,
-        child_layout: &R::MoveTypeLayout,
-        child_fully_annotated_layout: &A::MoveTypeLayout,
+        child_layout: &MoveTypeLayout,
+        child_fully_annotated_layout: &MoveTypeLayout,
         child_move_type: MoveObjectType,
     ) -> PartialVMResult<ObjectResult<&mut GlobalValue>> {
         let res = self.object_store.get_or_fetch_object(
@@ -615,11 +618,11 @@ fn update_owner_map(
 /// in storage.  We do not need this invariant for dev-inspect, as the programmable
 /// transaction execution will validate the bytes before we get to this point.
 pub fn get_all_uids(
-    fully_annotated_layout: &A::MoveTypeLayout,
+    fully_annotated_layout: &MoveTypeLayout,
     bcs_bytes: &[u8],
 ) -> Result<BTreeSet<ObjectID>, /* invariant violation */ String> {
     let mut ids = BTreeSet::new();
-    let v = A::MoveValue::simple_deserialize(bcs_bytes, fully_annotated_layout)
+    let v = MoveValue::simple_deserialize(bcs_bytes, fully_annotated_layout)
         .map_err(|e| format!("Failed to deserialize. {e:?}"))?;
     get_all_uids_in_value(&mut ids, &v)?;
     Ok(ids)
@@ -627,30 +630,34 @@ pub fn get_all_uids(
 
 fn get_all_uids_in_value(
     acc: &mut BTreeSet<ObjectID>,
-    v: &A::MoveValue,
+    v: &MoveValue,
 ) -> Result<(), /* invariant violation */ String> {
     let mut stack = vec![v];
     while let Some(cur) = stack.pop() {
         let s = match cur {
-            A::MoveValue::Struct(s) => s,
-            A::MoveValue::Vector(vec) => {
+            MoveValue::Struct(s) => s,
+            MoveValue::Vector(vec) => {
                 stack.extend(vec);
                 continue;
             }
             _ => continue,
         };
-        let A::MoveStruct { type_, fields } = s;
-        if type_ == &UID::type_() {
-            let inner = match &fields[0].1 {
-                A::MoveValue::Struct(A::MoveStruct { fields, .. }) => fields,
-                v => return Err(format!("Unexpected UID layout. {v:?}")),
-            };
-            match &inner[0].1 {
-                A::MoveValue::Address(id) => acc.insert((*id).into()),
-                v => return Err(format!("Unexpected ID layout. {v:?}")),
-            };
-        } else {
-            stack.extend(fields.iter().map(|(_, v)| v));
+        match s {
+            MoveStruct::WithTypes { type_, fields } => {
+                if type_ == &UID::type_() {
+                    let inner = match &fields[0].1 {
+                        MoveValue::Struct(MoveStruct::WithTypes { fields, .. }) => fields,
+                        v => return Err(format!("Unexpected UID layout. {v:?}")),
+                    };
+                    match &inner[0].1 {
+                        MoveValue::Address(id) => acc.insert((*id).into()),
+                        v => return Err(format!("Unexpected ID layout. {v:?}")),
+                    };
+                } else {
+                    stack.extend(fields.iter().map(|(_, v)| v));
+                }
+            }
+            v => return Err(format!("Unexpected struct layout. {v:?}")),
         }
     }
     Ok(())

@@ -66,7 +66,7 @@ export function AddressInput({
 			return null;
 		},
 		enabled: !!field.value,
-		gcTime: 10 * 1000,
+		cacheTime: 10 * 1000,
 		refetchOnMount: false,
 		refetchOnWindowFocus: false,
 		refetchInterval: false,

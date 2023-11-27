@@ -8,7 +8,7 @@ import { Heading } from '_src/ui/app/shared/heading';
 import { PasswordInputField } from '_src/ui/app/shared/input/password';
 import { Text } from '_src/ui/app/shared/text';
 import { ArrowLeft16, ArrowRight16 } from '@mysten/icons';
-import classNames from 'clsx';
+import classNames from 'classnames';
 import { ErrorMessage, Form, Formik } from 'formik';
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';

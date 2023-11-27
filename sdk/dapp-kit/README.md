@@ -27,7 +27,7 @@ To use the Sui dApp Kit in your project, run the following command in your proje
 npm i --save @mysten/dapp-kit @mysten/sui.js @tanstack/react-query
 ```
 
-## Setting up providers
+## Setting up Providers
 
 To be able to use the hooks and components in the dApp Kit, you need to wrap your app with a couple
 providers. The props available on the providers are covered in more detail in their respective docs
@@ -58,37 +58,22 @@ function App() {
 }
 ```
 
-## Using UI components to connect to a wallet
+## using hooks to make rpc calls
 
-The dApp Kit provides a set of flexible UI components that can be used to connect and manage wallet
-accounts from your dApp. The components are built on top of [Radix UI](radix-ui.com/primitives) and
-are customizable so you can quickly get your dApp up and running.
-
-To use our provided UI components, you will need to import the dApp Kit's CSS stylesheet into your
-dApp as shown below. For more information regarding customization options, check out the respective
-documentation pages for the components and
-[themes](https://sui-typescript-docs.vercel.app/dapp-kit/themes).
-
-```tsx
-import '@mysten/dapp-kit/dist/index.css';
-```
-
-## Using hooks to make RPC calls
-
-The dApp Kit provides a set of hooks for making RPC calls to the Sui blockchain. The hooks are thin
+The dApp Kit provides a set of hooks for making rpc calls to the Sui blockchain. The hooks are thin
 wrappers around `useQuery` from `@tanstack/react-query`. For more comprehensive documentation on how
-these query hooks can be used, check out the
+these query hooks checkout the
 [react-query docs](https://tanstack.com/query/latest/docs/react/overview).
 
 ```tsx
 import { useSuiClientQuery } from '@mysten/dapp-kit';
 
 function MyComponent() {
-	const { data, isPending, error, refetch } = useSuiClientQuery('getOwnedObjects', {
+	const { data, isLoading, error, refetch } = useSuiClientQuery('getOwnedObjects', {
 		owner: '0x123',
 	});
 
-	if (isPending) {
+	if (isLoading) {
 		return <div>Loading...</div>;
 	}
 

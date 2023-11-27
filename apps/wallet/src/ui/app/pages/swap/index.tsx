@@ -8,44 +8,37 @@ import BottomMenuLayout, { Content, Menu } from '_app/shared/bottom-menu-layout'
 import { Button } from '_app/shared/ButtonUI';
 import { Form } from '_app/shared/forms/Form';
 import { InputWithActionButton } from '_app/shared/InputWithAction';
-import { Text } from '_app/shared/text';
 import { ButtonOrLink } from '_app/shared/utils/ButtonOrLink';
 import Loading from '_components/loading';
 import Overlay from '_components/overlay';
 import { filterAndSortTokenBalances } from '_helpers';
 import {
-	useAllowedSwapCoinsList,
+	allowedSwapCoinsList,
+	Coins,
+	getUSDCurrency,
+	isExceedingSlippageTolerance,
 	useCoinsReFetchingConfig,
+	useDeepBookConfigs,
 	useGetEstimate,
 	useSortedCoinsByCategories,
 } from '_hooks';
-import { AverageSection } from '_pages/swap/AverageSection';
 import {
-	Coins,
 	initialValues,
 	SUI_CONVERSION_RATE,
-	SUI_USDC_AVERAGE_CONVERSION_RATE,
-	USDC_CONVERSION_RATE,
+	USDC_DECIMALS,
 	type FormValues,
 } from '_pages/swap/constants';
-import {
-	getAverageFromBalanceChanges,
-	getBalanceConversion,
-	getUSDCurrency,
-	isExceedingSlippageTolerance,
-	useSwapData,
-} from '_pages/swap/utils';
-import { ampli } from '_shared/analytics/ampli';
+import { useSuiUsdcBalanceConversion, useSwapData } from '_pages/swap/utils';
 import { DeepBookContextProvider, useDeepBookContext } from '_shared/deepBook/context';
 import { useTransactionSummary, useZodForm } from '@mysten/core';
 import { useSuiClientQuery } from '@mysten/dapp-kit';
 import { ArrowDown12, ArrowRight16 } from '@mysten/icons';
-import { type DryRunTransactionBlockResponse } from '@mysten/sui.js/client';
-import { SUI_TYPE_ARG } from '@mysten/sui.js/utils';
+import { type BalanceChange, type DryRunTransactionBlockResponse } from '@mysten/sui.js/client';
+import { SUI_DECIMALS, SUI_TYPE_ARG } from '@mysten/sui.js/utils';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import BigNumber from 'bignumber.js';
-import clsx from 'clsx';
-import { useEffect, useMemo, useState } from 'react';
+import clsx from 'classnames';
+import { useMemo, useState } from 'react';
 import { useWatch, type SubmitHandler } from 'react-hook-form';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
@@ -53,8 +46,6 @@ import { z } from 'zod';
 import { AssetData } from './AssetData';
 import { GasFeeSection } from './GasFeeSection';
 import { ToAssetSection } from './ToAssetSection';
-
-const MIN_INPUT = 0.1;
 
 enum ErrorStrings {
 	MISSING_DATA = 'Missing data',
@@ -75,21 +66,33 @@ function getSwapPageAtcText(
 	return `Swap ${fromSymbol} to ${toSymbol}`;
 }
 
+function getCoinsFromBalanceChanges(coinType: string, balanceChanges: BalanceChange[]) {
+	return balanceChanges
+		.filter((balance) => {
+			return balance.coinType === coinType;
+		})
+		.sort((a, b) => {
+			const aAmount = new BigNumber(a.amount).abs();
+			const bAmount = new BigNumber(b.amount).abs();
+
+			return aAmount.isGreaterThan(bAmount) ? -1 : 1;
+		});
+}
+
 export function SwapPageContent() {
-	const deepBookContext = useDeepBookContext();
 	const [slippageErrorString, setSlippageErrorString] = useState('');
 	const queryClient = useQueryClient();
-	const mainnetPools = deepBookContext.configs.pools;
+	const mainnetPools = useDeepBookConfigs().pools;
 	const navigate = useNavigate();
 	const [searchParams] = useSearchParams();
 	const activeAccount = useActiveAccount();
 	const signer = useSigner(activeAccount);
 	const activeAccountAddress = activeAccount?.address;
 	const { staleTime, refetchInterval } = useCoinsReFetchingConfig();
-	const coinsMap = deepBookContext.configs.coinsMap;
-	const deepBookClient = deepBookContext.client;
-	const accountCapId = deepBookContext.accountCapId;
-	const allowedSwapCoinsList = useAllowedSwapCoinsList();
+	const coinsMap = useDeepBookConfigs().coinsMap;
+	const deepBookClient = useDeepBookContext().client;
+
+	const accountCapId = useDeepBookContext().accountCapId;
 
 	const activeCoinType = searchParams.get('type');
 	const isAsk = activeCoinType === SUI_TYPE_ARG;
@@ -108,10 +111,11 @@ export function SwapPageContent() {
 		quoteCoinMetadata,
 		baseCoinSymbol,
 		quoteCoinSymbol,
-		isPending,
+		isLoading,
 	} = useSwapData({
 		baseCoinType,
 		quoteCoinType,
+		activeCoinType: activeCoinType || '',
 	});
 
 	const rawBaseBalance = baseCoinBalanceData?.totalBalance;
@@ -148,15 +152,7 @@ export function SwapPageContent() {
 				if (!value.length) {
 					context.addIssue({
 						code: 'custom',
-						message: 'Amount is required',
-					});
-					return z.NEVER;
-				}
-
-				if (bigNumberValue.lt(MIN_INPUT)) {
-					context.addIssue({
-						code: 'custom',
-						message: `Minimum ${MIN_INPUT} ${isAsk ? baseCoinSymbol : quoteCoinSymbol}`,
+						message: 'Amount is required.',
 					});
 					return z.NEVER;
 				}
@@ -164,7 +160,7 @@ export function SwapPageContent() {
 				if (bigNumberValue.lt(0)) {
 					context.addIssue({
 						code: 'custom',
-						message: 'Amount must be greater than 0',
+						message: 'Amount must be greater than 0.',
 					});
 					return z.NEVER;
 				}
@@ -189,7 +185,7 @@ export function SwapPageContent() {
 				if (numberPercent < 0 || numberPercent > 100) {
 					context.addIssue({
 						code: 'custom',
-						message: 'Value must be between 0 and 100',
+						message: 'Value must be between 0 and 100.',
 					});
 					return z.NEVER;
 				}
@@ -197,15 +193,7 @@ export function SwapPageContent() {
 				return percent;
 			}),
 		});
-	}, [
-		isAsk,
-		baseCoinDecimals,
-		quoteCoinDecimals,
-		maxBaseBalance,
-		maxQuoteBalance,
-		baseCoinSymbol,
-		quoteCoinSymbol,
-	]);
+	}, [isAsk, baseCoinDecimals, quoteCoinDecimals, maxBaseBalance, maxQuoteBalance]);
 
 	const form = useZodForm({
 		mode: 'all',
@@ -222,31 +210,26 @@ export function SwapPageContent() {
 		control,
 		handleSubmit,
 		reset,
-		formState: { isValid, isSubmitting, errors, isDirty },
+		formState: { isValid, isSubmitting, errors },
 	} = form;
-
-	useEffect(() => {
-		if (isDirty) {
-			setSlippageErrorString('');
-		}
-	}, [isDirty]);
 
 	const renderButtonToCoinsList = useMemo(() => {
 		return (
 			recognized.length > 1 &&
 			recognized.some((coin) => allowedSwapCoinsList.includes(coin.coinType))
 		);
-	}, [allowedSwapCoinsList, recognized]);
+	}, [recognized]);
 
 	const amount = useWatch({
 		name: 'amount',
 		control,
 	});
 
-	const baseBalance = new BigNumber(amount).shiftedBy(USDC_CONVERSION_RATE).toString();
-	const quoteBalance = new BigNumber(amount).shiftedBy(SUI_CONVERSION_RATE).toString();
-
 	const isPayAll = amount === (isAsk ? formattedBaseTokenBalance : formattedQuoteTokenBalance);
+
+	const { suiUsdc, usdcSui } = useSuiUsdcBalanceConversion({ amount });
+	const rawInputSuiUsdc = suiUsdc.rawValue;
+	const rawInputUsdcSui = usdcSui.rawValue;
 
 	const atcText = useMemo(() => {
 		if (isAsk) {
@@ -255,9 +238,16 @@ export function SwapPageContent() {
 		return getSwapPageAtcText(quoteCoinSymbol, baseCoinType, coinsMap);
 	}, [isAsk, baseCoinSymbol, baseCoinType, coinsMap, quoteCoinSymbol, quoteCoinType]);
 
+	const baseBalance = new BigNumber(isAsk ? amount || 0 : rawInputUsdcSui || 0)
+		.shiftedBy(SUI_DECIMALS)
+		.toString();
+	const quoteBalance = new BigNumber(isAsk ? rawInputSuiUsdc || 0 : amount || 0)
+		.shiftedBy(SUI_CONVERSION_RATE)
+		.toString();
+
 	const {
 		data: dataFromEstimate,
-		isPending: dataFromEstimateLoading,
+		isLoading: dataFromEstimateLoading,
 		isError: dataFromEstimateError,
 	} = useGetEstimate({
 		signer,
@@ -267,10 +257,6 @@ export function SwapPageContent() {
 		baseBalance,
 		quoteBalance,
 		isAsk,
-		totalBaseBalance: formattedBaseTokenBalance,
-		totalQuoteBalance: formattedQuoteTokenBalance,
-		baseConversionRate: USDC_CONVERSION_RATE,
-		quoteConversionRate: SUI_CONVERSION_RATE,
 	});
 
 	const recognizedPackagesList = useRecognizedPackages();
@@ -284,36 +270,28 @@ export function SwapPageContent() {
 	const totalGas = txnSummary?.gas?.totalGas;
 	const balanceChanges = dataFromEstimate?.dryRunResponse?.balanceChanges || [];
 
-	const averages = getAverageFromBalanceChanges({
-		balanceChanges,
-		baseCoinType,
-		quoteCoinType,
-		isAsk,
-		baseConversionRate: USDC_CONVERSION_RATE,
-		quoteConversionRate: SUI_CONVERSION_RATE,
-	});
-
-	const balance = getBalanceConversion({
-		balance: new BigNumber(amount),
-		isAsk,
-		averages,
-	});
-
-	const formattedBalance = new BigNumber(balance)
-		.shiftedBy(isAsk ? SUI_USDC_AVERAGE_CONVERSION_RATE : -SUI_USDC_AVERAGE_CONVERSION_RATE)
-		.toNumber();
-
-	const { mutate: handleSwap, isPending: isSwapLoading } = useMutation({
+	const { mutate: handleSwap, isLoading: isSwapLoading } = useMutation({
 		mutationFn: async (formData: FormValues) => {
 			const txn = dataFromEstimate?.txn;
+
+			const baseCoins = getCoinsFromBalanceChanges(baseCoinType, balanceChanges);
+			const quoteCoins = getCoinsFromBalanceChanges(quoteCoinType, balanceChanges);
+
+			const baseCoinAmount = baseCoins[0]?.amount;
+			const quoteCoinAmount = quoteCoins[0]?.amount;
+
+			if (!baseCoinAmount || !quoteCoinAmount) {
+				throw new Error(ErrorStrings.MISSING_DATA);
+			}
 
 			const isExceedingSlippage = await isExceedingSlippageTolerance({
 				slipPercentage: formData.allowedMaxSlippagePercentage,
 				poolId,
 				deepBookClient,
-				conversionRate: USDC_CONVERSION_RATE,
+				conversionRate: USDC_DECIMALS,
+				baseCoinAmount,
+				quoteCoinAmount,
 				isAsk,
-				average: averages.averageBaseToQuote,
 			});
 
 			if (!balanceChanges.length) {
@@ -338,15 +316,8 @@ export function SwapPageContent() {
 			});
 		},
 		onSuccess: (response) => {
-			queryClient.invalidateQueries({ queryKey: ['get-coins'] });
-			queryClient.invalidateQueries({ queryKey: ['coin-balance'] });
-
-			ampli.swappedCoin({
-				fromCoinType: isAsk ? baseCoinType : quoteCoinType,
-				toCoinType: isAsk ? quoteCoinType : baseCoinType,
-				totalBalance: Number(amount),
-				estimatedReturnBalance: Number(formattedBalance),
-			});
+			queryClient.invalidateQueries(['get-coins']);
+			queryClient.invalidateQueries(['coin-balance']);
 
 			const receiptUrl = `/receipt?txdigest=${encodeURIComponent(
 				response.digest,
@@ -367,13 +338,13 @@ export function SwapPageContent() {
 	return (
 		<Overlay showModal title="Swap" closeOverlay={() => navigate('/')}>
 			<div className="flex flex-col h-full w-full">
-				<Loading loading={isPending}>
+				<Loading loading={isLoading}>
 					<BottomMenuLayout>
 						<Content>
 							<Form form={form} onSubmit={handleOnsubmit}>
 								<div
 									className={clsx(
-										'flex flex-col border border-hero-darkest/20 rounded-xl p-5 border-solid',
+										'flex flex-col border border-hero-darkest/20 rounded-xl pt-5 pb-6 px-5 gap-4 border-solid',
 										isValid && 'bg-gradients-graph-cards',
 									)}
 								>
@@ -387,38 +358,36 @@ export function SwapPageContent() {
 										/>
 									)}
 
-									<div className="mt-4">
-										<InputWithActionButton
-											{...register('amount')}
-											suffix={isAsk ? baseCoinSymbol : quoteCoinSymbol}
-											noBorder={isValid}
-											value={amount}
-											type="number"
-											errorString={errors.amount?.message}
-											actionText="Max"
-											actionType="button"
-											actionDisabled={isPayAll}
-											prefix={isPayAll ? '~' : undefined}
-											info={
-												isValid &&
-												!!amount && (
-													<Text variant="subtitleSmall" color="steel-dark">
-														{isPayAll ? '~ ' : ''}
-														{getUSDCurrency(isAsk ? formattedBalance : Number(amount))}
-													</Text>
-												)
-											}
-											onActionClicked={() => {
-												setValue(
-													'amount',
-													activeCoinType === SUI_TYPE_ARG
-														? formattedBaseTokenBalance
-														: formattedQuoteTokenBalance,
-													{ shouldValidate: true },
-												);
-											}}
-										/>
-									</div>
+									<InputWithActionButton
+										{...register('amount')}
+										dark
+										suffix={isAsk ? baseCoinSymbol : quoteCoinSymbol}
+										value={amount}
+										type="number"
+										errorString={errors.amount?.message}
+										actionText="Max"
+										actionType="button"
+										actionDisabled={isPayAll}
+										prefix={isPayAll ? '~' : undefined}
+										onActionClicked={() => {
+											setValue(
+												'amount',
+												activeCoinType === SUI_TYPE_ARG
+													? formattedBaseTokenBalance
+													: formattedQuoteTokenBalance,
+												{ shouldDirty: true },
+											);
+										}}
+									/>
+
+									{isValid && !!amount && (
+										<div className="ml-3">
+											<div className="text-bodySmall font-medium text-hero-darkest/40">
+												{isPayAll ? '~ ' : ''}
+												{getUSDCurrency(isAsk ? rawInputSuiUsdc : Number(amount))}
+											</div>
+										</div>
+									)}
 								</div>
 
 								<ButtonOrLink
@@ -447,24 +416,12 @@ export function SwapPageContent() {
 									quoteCoinType={quoteCoinType}
 								/>
 
-								{isValid && (
-									<div className="mt-4">
-										<AverageSection
-											averages={averages}
-											isAsk={isAsk}
-											baseCoinType={baseCoinType}
-											quoteCoinType={quoteCoinType}
-										/>
-									</div>
-								)}
-
 								<div className="mt-4">
 									<GasFeeSection
 										totalGas={totalGas || ''}
 										activeCoinType={activeCoinType}
 										amount={amount}
 										isValid={isValid}
-										averages={averages}
 									/>
 								</div>
 							</Form>

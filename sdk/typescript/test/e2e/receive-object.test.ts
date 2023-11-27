@@ -142,7 +142,5 @@ async function validateTransaction(client: SuiClient, signer: Keypair, tx: Trans
 	});
 	expect(localDigest).toEqual(result.digest);
 	expect(result.effects?.status.status).toEqual('success');
-
-	await client.waitForTransactionBlock({ digest: result.digest });
 	return result;
 }

@@ -26,11 +26,11 @@ export function ResetWarningPage() {
 				!value.find(({ accountSourceID }) => accountSourceID === sourceID),
 		),
 	);
-	const { isPending } = useAccounts();
+	const { isLoading } = useAccounts();
 	if (!value.length) {
 		return <Navigate to="/accounts/forgot-password" replace />;
 	}
-	if (!accountGroupsToRemove.length && !isPending) {
+	if (!accountGroupsToRemove.length && !isLoading) {
 		return <Navigate to="../reset" replace />;
 	}
 	return (

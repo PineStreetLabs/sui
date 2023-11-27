@@ -1,7 +1,7 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 import { Text } from '_app/shared/text';
-import cl from 'clsx';
+import cl from 'classnames';
 import { memo } from 'react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';

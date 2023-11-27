@@ -18,7 +18,7 @@ export default function OfflineSigner() {
 	const { currentAccount, signTransactionBlock } = useWalletKit();
 	const [tab, setTab] = useState<'transaction' | 'signature'>('transaction');
 	const [bytes, setBytes] = useState('');
-	const { mutate, data, isPending } = useMutation({
+	const { mutate, data, isLoading } = useMutation({
 		mutationKey: ['sign'],
 		mutationFn: async () => {
 			const transactionBlock = TransactionBlock.from(bytes);
@@ -40,7 +40,7 @@ export default function OfflineSigner() {
 	const {
 		mutate: dryRun,
 		data: dryRunData,
-		isPending: dryRunLoading,
+		isLoading: dryRunLoading,
 		error,
 		reset,
 	} = useMutation({
@@ -93,7 +93,7 @@ export default function OfflineSigner() {
 						<Textarea value={bytes} onChange={(e) => setBytes(e.target.value)} />
 						<div className="flex gap-4">
 							<ConnectWallet />
-							<Button disabled={!currentAccount || !bytes || isPending} onClick={() => mutate()}>
+							<Button disabled={!currentAccount || !bytes || isLoading} onClick={() => mutate()}>
 								Sign Transaction
 							</Button>
 							<Button

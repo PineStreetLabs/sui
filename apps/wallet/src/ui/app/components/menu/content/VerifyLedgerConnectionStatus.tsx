@@ -34,12 +34,12 @@ export function VerifyLedgerConnectionStatus({
 	derivationPath,
 }: VerifyLedgerConnectionLinkProps) {
 	const { connectToLedger } = useSuiLedgerClient();
-	const [isPending, setLoading] = useState(false);
+	const [isLoading, setLoading] = useState(false);
 	const [verificationStatus, setVerificationStatus] = useState(VerificationStatus.UNKNOWN);
 
 	switch (verificationStatus) {
 		case VerificationStatus.UNKNOWN:
-			if (isPending) {
+			if (isLoading) {
 				return (
 					<div className="flex gap-1 text-hero-dark">
 						<LoadingIndicator color="inherit" />

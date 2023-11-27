@@ -23,7 +23,6 @@ serde.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full", "test-util"] }
 tracing.workspace = true
-typed-store-error.workspace = true
 sui-macros.workspace = true
 ouroboros.workspace = true
 rand.workspace = true

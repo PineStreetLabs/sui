@@ -7,7 +7,7 @@ import { useQuery, type UseQueryOptions } from '@tanstack/react-query';
 
 type UseGetDelegatedStakesOptions = {
 	address: string;
-} & Omit<UseQueryOptions<DelegatedStake[], Error>, 'queryKey' | 'queryFn'>;
+} & UseQueryOptions<DelegatedStake[], Error>;
 
 export function useGetDelegatedStake(options: UseGetDelegatedStakesOptions) {
 	const client = useSuiClient();

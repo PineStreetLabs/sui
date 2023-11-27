@@ -6,7 +6,7 @@ import clsx from 'clsx';
 import { type ReactNode } from 'react';
 
 interface DescriptionProps {
-	title: ReactNode;
+	title: string;
 	children: ReactNode;
 	titleVariant?: TextProps['variant'];
 	titleColor?: TextProps['color'];

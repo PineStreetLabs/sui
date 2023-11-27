@@ -49,7 +49,7 @@ export function ZkLoginButtons({
 	const [createInProgressProvider, setCreateInProgressProvider] = useState<ZkLoginProvider | null>(
 		null,
 	);
-	const { data: accountsTotalByType, isPending } = useCountAccountsByType();
+	const { data: accountsTotalByType, isLoading } = useCountAccountsByType();
 	return (
 		<div
 			className={cx('flex w-full', {
@@ -80,7 +80,7 @@ export function ZkLoginButtons({
 							!enabled ||
 							buttonsDisabled ||
 							createInProgressProvider !== null ||
-							isPending ||
+							isLoading ||
 							!!accountsTotalByType?.zkLogin?.extra?.[provider] ||
 							!!forcedZkLoginProvider
 						}

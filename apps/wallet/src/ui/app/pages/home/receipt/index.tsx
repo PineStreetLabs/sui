@@ -25,7 +25,7 @@ function ReceiptPage() {
 	const fromParam = searchParams.get('from');
 	const client = useSuiClient();
 
-	const { data, isPending, isError } = useQuery<SuiTransactionBlockResponse>({
+	const { data, isLoading, isError } = useQuery<SuiTransactionBlockResponse>({
 		queryKey: ['transactions-by-id', transactionId],
 		queryFn: async () => {
 			return client.getTransactionBlock({
@@ -70,7 +70,7 @@ function ReceiptPage() {
 	}
 
 	return (
-		<Loading loading={isPending || isGuardLoading}>
+		<Loading loading={isLoading || isGuardLoading}>
 			<Overlay
 				showModal={showModal}
 				setShowModal={setShowModal}

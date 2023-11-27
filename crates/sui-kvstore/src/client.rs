@@ -7,11 +7,9 @@ use aws_sdk_dynamodb::config::{Credentials, Region};
 use aws_sdk_dynamodb::primitives::Blob;
 use aws_sdk_dynamodb::types::{AttributeValue, PutRequest, WriteRequest};
 use aws_sdk_s3 as s3;
-use backoff::backoff::Backoff;
-use backoff::ExponentialBackoff;
 use serde::Serialize;
 use std::borrow::Borrow;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use sui_config::node::TransactionKeyValueStoreWriteConfig;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
@@ -51,7 +49,6 @@ pub trait KVWriteClient {
     }
 }
 
-#[derive(Clone)]
 pub struct DynamoDbClient {
     dynamo_client: dynamodb::Client,
     s3_client: s3::Client,
@@ -129,11 +126,8 @@ impl KVWriteClient for DynamoDbClient {
         if items.is_empty() {
             return Ok(());
         }
-        let mut backoff = ExponentialBackoff::default();
-        let mut queue: VecDeque<Vec<_>> = items.chunks(25).map(|ck| ck.to_vec()).collect();
-        while let Some(chunk) = queue.pop_front() {
-            let response = self
-                .dynamo_client
+        for chunk in items.chunks(25) {
+            self.dynamo_client
                 .batch_write_item()
                 .set_request_items(Some(HashMap::from([(
                     self.table_name.clone(),
@@ -141,18 +135,6 @@ impl KVWriteClient for DynamoDbClient {
                 )])))
                 .send()
                 .await?;
-            if let Some(response) = response.unprocessed_items {
-                if let Some(unprocessed) = response.into_iter().next() {
-                    if !unprocessed.1.is_empty() {
-                        if queue.is_empty() {
-                            if let Some(duration) = backoff.next_backoff() {
-                                tokio::time::sleep(duration).await;
-                            }
-                        }
-                        queue.push_back(unprocessed.1);
-                    }
-                }
-            }
         }
         Ok(())
     }

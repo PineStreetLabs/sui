@@ -41,7 +41,7 @@ export default function EpochDetail() {
 	const { id } = useParams();
 	const enhancedRpc = useEnhancedRpcClient();
 	const { data: systemState } = useSuiClientQuery('getLatestSuiSystemState');
-	const { data, isPending, isError } = useQuery({
+	const { data, isLoading, isError } = useQuery({
 		queryKey: ['epoch', id],
 		queryFn: async () =>
 			enhancedRpc.getEpochs({
@@ -69,7 +69,7 @@ export default function EpochDetail() {
 		);
 	}, [epochData]);
 
-	if (isPending) return <PageLayout content={<LoadingIndicator />} />;
+	if (isLoading) return <PageLayout content={<LoadingIndicator />} />;
 
 	if (isError || !epochData)
 		return (

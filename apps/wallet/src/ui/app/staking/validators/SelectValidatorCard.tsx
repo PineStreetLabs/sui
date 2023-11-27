@@ -10,7 +10,7 @@ import { ampli } from '_src/shared/analytics/ampli';
 import { calculateStakeShare, formatPercentageDisplay, useGetValidatorsApy } from '@mysten/core';
 import { useSuiClientQuery } from '@mysten/dapp-kit';
 import { ArrowRight16 } from '@mysten/icons';
-import cl from 'clsx';
+import cl from 'classnames';
 import { useMemo, useState } from 'react';
 
 import { ValidatorListItem } from './ValidatorListItem';
@@ -34,7 +34,7 @@ export function SelectValidatorCard() {
 	const [selectedValidator, setSelectedValidator] = useState<Validator | null>(null);
 	const [sortKey, setSortKey] = useState<SortKeys | null>(null);
 	const [sortAscending, setSortAscending] = useState(true);
-	const { data, isPending, isError } = useSuiClientQuery('getLatestSuiSystemState');
+	const { data, isLoading, isError } = useSuiClientQuery('getLatestSuiSystemState');
 
 	const { data: rollingAverageApys } = useGetValidatorsApy();
 
@@ -92,7 +92,7 @@ export function SelectValidatorCard() {
 		return sortedAsc;
 	}, [validatorsRandomOrder, sortAscending, rollingAverageApys, totalStake, sortKey]);
 
-	if (isPending) {
+	if (isLoading) {
 		return (
 			<div className="p-2 w-full flex justify-center items-center h-full">
 				<LoadingIndicator />

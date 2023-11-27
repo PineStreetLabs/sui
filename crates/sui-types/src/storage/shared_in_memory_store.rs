@@ -16,7 +16,6 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 use tap::Pipe;
-use tracing::error;
 
 #[derive(Clone, Debug, Default)]
 pub struct SharedInMemoryStore(Arc<std::sync::RwLock<InMemoryStore>>);
@@ -397,10 +396,10 @@ impl InMemoryStore {
             return;
         }
 
-        self.epoch_to_committee.push(committee);
-
-        if self.epoch_to_committee.len() != epoch {
-            error!("committee was inserted into EpochCommitteeMap out of order");
+        if self.epoch_to_committee.len() == epoch {
+            self.epoch_to_committee.push(committee);
+        } else {
+            panic!("committee was inserted into EpochCommitteeMap out of order");
         }
     }
 

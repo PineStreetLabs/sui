@@ -85,7 +85,7 @@ function DisconnectApp({
 						values={accountsToDisconnect}
 						onChange={setAccountsToDisconnect}
 						mode="disconnect"
-						disabled={disconnectMutation.isPending}
+						disabled={disconnectMutation.isLoading}
 					/>
 				) : (
 					<SummaryCard
@@ -109,7 +109,7 @@ function DisconnectApp({
 								? 'Disconnect All'
 								: 'Disconnect Selected'
 						}
-						loading={disconnectMutation.isPending}
+						loading={disconnectMutation.isLoading}
 						onClick={() => disconnectMutation.mutate()}
 					/>
 				</div>

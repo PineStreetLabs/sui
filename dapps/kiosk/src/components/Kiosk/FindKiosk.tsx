@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { normalizeSuiAddress } from '@mysten/sui.js/utils';
-import classnames from 'clsx';
+import classnames from 'classnames';
 import { FormEvent, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 

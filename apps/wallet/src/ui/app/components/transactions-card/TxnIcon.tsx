@@ -10,7 +10,7 @@ import {
 	Unstaked,
 	WalletActionStake24,
 } from '@mysten/icons';
-import cl from 'clsx';
+import cl from 'classnames';
 
 import LoadingIndicator from '../loading/LoadingIndicator';
 

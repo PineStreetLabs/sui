@@ -20,11 +20,8 @@ use sui_protocol_config::ProtocolVersion;
 use sui_swarm_config::genesis_config::AccountConfig;
 use sui_swarm_config::network_config::NetworkConfig;
 use sui_swarm_config::network_config_builder::ConfigBuilder;
-use sui_types::base_types::{AuthorityName, ObjectID, VersionNumber};
+use sui_types::base_types::AuthorityName;
 use sui_types::crypto::AuthoritySignature;
-use sui_types::error::SuiError;
-use sui_types::object::Object;
-use sui_types::storage::ObjectStore;
 use sui_types::{
     base_types::SuiAddress,
     committee::Committee,
@@ -38,13 +35,12 @@ use sui_types::{
 };
 
 use self::epoch_state::EpochState;
-pub use self::store::in_mem_store::InMemoryStore;
-use self::store::in_mem_store::KeyStore;
-pub use self::store::SimulatorStore;
+use self::store::KeyStore;
+pub use self::store::{InMemoryStore, SimulatorStore};
 use sui_types::mock_checkpoint_builder::{MockCheckpointBuilder, ValidatorKeypairProvider};
 
 mod epoch_state;
-pub mod store;
+mod store;
 
 /// A `Simulacrum` of Sui.
 ///
@@ -102,7 +98,7 @@ where
             .with_chain_start_timestamp_ms(1)
             .deterministic_committee_size(NonZeroUsize::new(1).unwrap())
             .build();
-        Self::new_with_network_config_in_mem(&config, rng)
+        Self::new_with_network_config(&config, rng)
     }
 
     pub fn new_with_protocol_version_and_accounts(
@@ -118,18 +114,12 @@ where
             .with_protocol_version(protocol_version)
             .with_accounts(account_configs)
             .build();
-        Self::new_with_network_config_in_mem(&config, rng)
+        Self::new_with_network_config(&config, rng)
     }
 
-    fn new_with_network_config_in_mem(config: &NetworkConfig, rng: R) -> Self {
-        let store = InMemoryStore::new(&config.genesis);
-        Self::new_with_network_config_store(config, rng, store)
-    }
-}
-
-impl<R, S: store::SimulatorStore> Simulacrum<R, S> {
-    pub fn new_with_network_config_store(config: &NetworkConfig, rng: R, store: S) -> Self {
+    fn new_with_network_config(config: &NetworkConfig, rng: R) -> Self {
         let keystore = KeyStore::from_network_config(config);
+        let store = InMemoryStore::new(&config.genesis);
         let checkpoint_builder = MockCheckpointBuilder::new(config.genesis.checkpoint());
 
         let genesis = &config.genesis;
@@ -145,7 +135,9 @@ impl<R, S: store::SimulatorStore> Simulacrum<R, S> {
             deny_config: TransactionDenyConfig::default(),
         }
     }
+}
 
+impl<R> Simulacrum<R> {
     /// Attempts to execute the provided Transaction.
     ///
     /// The provided Transaction undergoes the same types of checks that a Validator does prior to
@@ -259,7 +251,7 @@ impl<R, S: store::SimulatorStore> Simulacrum<R, S> {
         self.epoch_state = new_epoch_state;
     }
 
-    pub fn store(&self) -> &dyn SimulatorStore {
+    pub fn store(&self) -> &InMemoryStore {
         &self.store
     }
 
@@ -366,20 +358,6 @@ impl ValidatorKeypairProvider for CommitteeWithKeys<'_> {
     }
 }
 
-impl<T, V: store::SimulatorStore> ObjectStore for Simulacrum<T, V> {
-    fn get_object(&self, object_id: &ObjectID) -> Result<Option<Object>, SuiError> {
-        Ok(store::SimulatorStore::get_object(&self.store, object_id))
-    }
-
-    fn get_object_by_key(
-        &self,
-        object_id: &ObjectID,
-        version: VersionNumber,
-    ) -> Result<Option<Object>, SuiError> {
-        self.store.get_object_by_key(object_id, version)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -400,7 +378,7 @@ mod tests {
     fn deterministic_genesis() {
         let rng = StdRng::from_seed([9; 32]);
         let chain1 = Simulacrum::new_with_rng(rng);
-        let genesis_checkpoint_digest1 = *chain1
+        let genesis_checkpoint_digest1 = chain1
             .store()
             .get_checkpoint_by_sequence_number(0)
             .unwrap()
@@ -408,7 +386,7 @@ mod tests {
 
         let rng = StdRng::from_seed([9; 32]);
         let chain2 = Simulacrum::new_with_rng(rng);
-        let genesis_checkpoint_digest2 = *chain2
+        let genesis_checkpoint_digest2 = chain2
             .store()
             .get_checkpoint_by_sequence_number(0)
             .unwrap()
@@ -474,7 +452,7 @@ mod tests {
             .owned_objects(sender)
             .find(|object| object.is_gas_coin())
             .unwrap();
-        let gas_coin = GasCoin::try_from(&object).unwrap();
+        let gas_coin = GasCoin::try_from(object).unwrap();
         let gas_id = object.id();
         let transfer_amount = gas_coin.value() / 2;
 
@@ -501,8 +479,9 @@ mod tests {
 
         assert_eq!(
             (transfer_amount as i64 - gas_paid) as u64,
-            store::SimulatorStore::get_object(sim.store(), &gas_id)
-                .and_then(|object| GasCoin::try_from(&object).ok())
+            sim.store()
+                .get_object(&gas_id)
+                .and_then(|object| GasCoin::try_from(object).ok())
                 .unwrap()
                 .value()
         );
@@ -512,7 +491,7 @@ mod tests {
             sim.store()
                 .owned_objects(recipient)
                 .next()
-                .and_then(|object| GasCoin::try_from(&object).ok())
+                .and_then(|object| GasCoin::try_from(object).ok())
                 .unwrap()
                 .value()
         );

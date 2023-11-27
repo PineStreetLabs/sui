@@ -5,7 +5,7 @@ import type {
 	SuiSignPersonalMessageInput,
 	SuiSignPersonalMessageOutput,
 } from '@mysten/wallet-standard';
-import type { UseMutationOptions, UseMutationResult } from '@tanstack/react-query';
+import type { UseMutationOptions } from '@tanstack/react-query';
 import { useMutation } from '@tanstack/react-query';
 
 import {
@@ -44,11 +44,7 @@ type UseSignPersonalMessageMutationOptions = Omit<
 export function useSignPersonalMessage({
 	mutationKey,
 	...mutationOptions
-}: UseSignPersonalMessageMutationOptions = {}): UseMutationResult<
-	UseSignPersonalMessageResult,
-	UseSignPersonalMessageError,
-	UseSignPersonalMessageArgs
-> {
+}: UseSignPersonalMessageMutationOptions = {}) {
 	const { currentWallet } = useCurrentWallet();
 	const currentAccount = useCurrentAccount();
 
@@ -66,31 +62,17 @@ export function useSignPersonalMessage({
 				);
 			}
 
-			const signPersonalMessageFeature = currentWallet.features['sui:signPersonalMessage'];
-			if (signPersonalMessageFeature) {
-				return await signPersonalMessageFeature.signPersonalMessage({
-					...signPersonalMessageArgs,
-					account: signerAccount,
-				});
-			}
-
-			// TODO: Remove this once we officially discontinue sui:signMessage in the wallet standard
-			const signMessageFeature = currentWallet.features['sui:signMessage'];
-			if (signMessageFeature) {
-				console.warn(
-					"This wallet doesn't support the `signPersonalMessage` feature... falling back to `signMessage`.",
+			const walletFeature = currentWallet.features['sui:signPersonalMessage'];
+			if (!walletFeature) {
+				throw new WalletFeatureNotSupportedError(
+					"This wallet doesn't support the `signPersonalMessage` feature.",
 				);
-
-				const { messageBytes, signature } = await signMessageFeature.signMessage({
-					...signPersonalMessageArgs,
-					account: signerAccount,
-				});
-				return { bytes: messageBytes, signature };
 			}
 
-			throw new WalletFeatureNotSupportedError(
-				"This wallet doesn't support the `signPersonalMessage` feature.",
-			);
+			return await walletFeature.signPersonalMessage({
+				...signPersonalMessageArgs,
+				account: signerAccount,
+			});
 		},
 		...mutationOptions,
 	});

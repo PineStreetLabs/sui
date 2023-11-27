@@ -12,12 +12,12 @@ export function ForgotPasswordIndexPage() {
 	const totalRecoverable =
 		allAccountSources.data?.filter(({ type }) => type === 'mnemonic').length || 0;
 	useEffect(() => {
-		if (allAccountSources.isPending) {
+		if (allAccountSources.isLoading) {
 			return;
 		}
 		const url =
 			totalRecoverable === 0 ? '/' : totalRecoverable === 1 ? './recover' : './recover-many';
 		navigate(url, { replace: true });
-	}, [allAccountSources.isPending, totalRecoverable, navigate]);
+	}, [allAccountSources.isLoading, totalRecoverable, navigate]);
 	return null;
 }

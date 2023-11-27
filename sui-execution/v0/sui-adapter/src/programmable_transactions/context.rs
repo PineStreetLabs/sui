@@ -34,7 +34,6 @@ mod checked {
         self, get_all_uids, max_event_error, ObjectRuntime, RuntimeResults,
     };
     use sui_protocol_config::ProtocolConfig;
-    use sui_types::storage::PackageObjectArc;
     use sui_types::{
         balance::Balance,
         base_types::{MoveObjectType, ObjectID, SequenceNumber, SuiAddress, TxContext},
@@ -269,7 +268,7 @@ mod checked {
             let package = package_for_linkage(&self.session, package_id)
                 .map_err(|e| self.convert_vm_error(e))?;
 
-            set_linkage(&mut self.session, package.move_package())
+            set_linkage(&mut self.session, &package)
         }
 
         /// Set the link context for the session from the linkage information in the `package`.  Returns
@@ -1024,11 +1023,11 @@ mod checked {
     fn package_for_linkage(
         session: &Session<LinkageView>,
         package_id: ObjectID,
-    ) -> VMResult<PackageObjectArc> {
+    ) -> VMResult<MovePackage> {
         use move_binary_format::errors::PartialVMError;
         use move_core_types::vm_status::StatusCode;
 
-        match session.get_resolver().get_package_object(&package_id) {
+        match session.get_resolver().get_package(&package_id) {
             Ok(Some(package)) => Ok(package),
             Ok(None) => Err(PartialVMError::new(StatusCode::LINKER_ERROR)
                 .with_message(format!("Cannot find link context {package_id} in store"))
@@ -1077,12 +1076,11 @@ mod checked {
 
                 // Set the defining package as the link context on the session while loading the
                 // struct
-                let original_address =
-                    set_linkage(session, package.move_package()).map_err(|e| {
-                        PartialVMError::new(StatusCode::UNKNOWN_INVARIANT_VIOLATION_ERROR)
-                            .with_message(e.to_string())
-                            .finish(Location::Undefined)
-                    })?;
+                let original_address = set_linkage(session, &package).map_err(|e| {
+                    PartialVMError::new(StatusCode::UNKNOWN_INVARIANT_VIOLATION_ERROR)
+                        .with_message(e.to_string())
+                        .finish(Location::Undefined)
+                })?;
 
                 let runtime_id = ModuleId::new(original_address, module.clone());
                 let res = session.load_struct(&runtime_id, name);

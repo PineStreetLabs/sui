@@ -53,7 +53,6 @@ pub enum ConsensusTransactionKey {
     // Key must include both id and jwk, because honest validators could be given multiple jwks for
     // the same id by malfunctioning providers.
     NewJWKFetched(Box<(AuthorityName, JwkId, JWK)>),
-    RandomnessStateUpdate(u64),
 }
 
 impl Debug for ConsensusTransactionKey {
@@ -80,7 +79,6 @@ impl Debug for ConsensusTransactionKey {
                     jwk
                 )
             }
-            Self::RandomnessStateUpdate(round) => write!(f, "RandomnessStateUpdate({round:?})"),
         }
     }
 }
@@ -148,7 +146,6 @@ pub enum ConsensusTransactionKind {
     EndOfPublish(AuthorityName),
     CapabilityNotification(AuthorityCapabilities),
     NewJWKFetched(AuthorityName, JwkId, JWK),
-    RandomnessStateUpdate(u64, Vec<u8>),
 }
 
 impl ConsensusTransaction {
@@ -197,23 +194,6 @@ impl ConsensusTransaction {
         }
     }
 
-    pub fn new_mysticeti_certificate(
-        round: u64,
-        offset: u64,
-        certificate: CertifiedTransaction,
-    ) -> Self {
-        let mut hasher = DefaultHasher::new();
-        let tx_digest = certificate.digest();
-        tx_digest.hash(&mut hasher);
-        round.hash(&mut hasher);
-        offset.hash(&mut hasher);
-        let tracking_id = hasher.finish().to_le_bytes();
-        Self {
-            tracking_id,
-            kind: ConsensusTransactionKind::UserTransaction(Box::new(certificate)),
-        }
-    }
-
     pub fn new_jwk_fetched(authority: AuthorityName, id: JwkId, jwk: JWK) -> Self {
         let mut hasher = DefaultHasher::new();
         id.hash(&mut hasher);
@@ -253,9 +233,6 @@ impl ConsensusTransaction {
                     id.clone(),
                     key.clone(),
                 )))
-            }
-            ConsensusTransactionKind::RandomnessStateUpdate(round, _bytes) => {
-                ConsensusTransactionKey::RandomnessStateUpdate(*round)
             }
         }
     }

@@ -25,7 +25,7 @@ export function AccountListItem({
 	hideExplorerLink,
 }: AccountListItemProps) {
 	const activeAccount = useActiveAccount();
-	const { unlockAccount, lockAccount, isPending, accountToUnlock } = useUnlockAccount();
+	const { unlockAccount, lockAccount, isLoading, accountToUnlock } = useUnlockAccount();
 
 	return (
 		<AccountItem
@@ -37,7 +37,7 @@ export function AccountListItem({
 						<div className="flex items-center justify-center">
 							<LockUnlockButton
 								isLocked={account.isLocked}
-								isLoading={isPending && accountToUnlock?.id === account.id}
+								isLoading={isLoading && accountToUnlock?.id === account.id}
 								onClick={(e) => {
 									// prevent the account from being selected when clicking the lock button
 									e.stopPropagation();

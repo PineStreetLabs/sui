@@ -10,17 +10,11 @@ import type {
 	WalletWithRequiredFeatures,
 } from '@mysten/wallet-standard';
 import { SUI_CHAINS } from '@mysten/wallet-standard';
-import type { Mock } from 'vitest';
 
 export class MockWallet implements Wallet {
 	version = '1.0.0' as const;
 	icon = `data:image/png;base64,` as const;
 	chains = SUI_CHAINS;
-
-	mocks: {
-		connect: Mock;
-		disconnect: Mock;
-	};
 
 	#walletName: string;
 	#accounts: ReadonlyWalletAccount[];
@@ -29,6 +23,9 @@ export class MockWallet implements Wallet {
 		event: string;
 		listener: (properties: StandardEventsChangeProperties) => void;
 	}[];
+
+	#connect = vi.fn().mockImplementation(() => ({ accounts: this.#accounts }));
+	#disconnect = vi.fn();
 
 	#on = vi.fn((...args: Parameters<StandardEventsOnMethod>) => {
 		this.#eventHandlers.push({ event: args[0], listener: args[1] });
@@ -46,10 +43,6 @@ export class MockWallet implements Wallet {
 		this.#accounts = accounts;
 		this.#features = features;
 		this.#eventHandlers = [];
-		this.mocks = {
-			connect: vi.fn().mockImplementation(() => ({ accounts: this.#accounts })),
-			disconnect: vi.fn(),
-		};
 	}
 
 	get name() {
@@ -64,11 +57,11 @@ export class MockWallet implements Wallet {
 		return {
 			'standard:connect': {
 				version: '1.0.0',
-				connect: this.mocks.connect,
+				connect: this.#connect,
 			},
 			'standard:disconnect': {
 				version: '1.0.0',
-				disconnect: this.mocks.disconnect,
+				disconnect: this.#disconnect,
 			},
 			'standard:events': {
 				version: '1.0.0',

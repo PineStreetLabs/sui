@@ -31,9 +31,9 @@ const MAX_UNIT_TEST_INSTRUCTIONS: u64 = 1_000_000;
 pub struct Test {
     #[clap(flatten)]
     pub test: test::Test,
-    /// If `true`, disable linters
+    /// If `true`, enable linters
     #[clap(long, global = true)]
-    pub no_lint: bool,
+    pub lint: bool,
 }
 
 impl Test {
@@ -43,11 +43,6 @@ impl Test {
         build_config: BuildConfig,
         unit_test_config: UnitTestingConfig,
     ) -> anyhow::Result<UnitTestResult> {
-        if !cfg!(debug_assertions) && self.test.compute_coverage {
-            return Err(anyhow::anyhow!(
-                "The --coverage flag is currently supported only in debug builds. Please build the Sui CLI from source in debug mode."
-            ));
-        }
         // find manifest file directory from a given path or (if missing) from current dir
         let rerooted_path = base::reroot_path(path)?;
         // pre build for Sui-specific verifications
@@ -63,7 +58,7 @@ impl Test {
             with_unpublished_deps,
             dump_bytecode_as_base64,
             generate_struct_layouts,
-            !self.no_lint,
+            self.lint,
         )?;
         run_move_unit_tests(
             rerooted_path,
@@ -120,6 +115,7 @@ pub fn run_move_unit_tests(
         build_config,
         UnitTestingConfig {
             report_stacktrace_on_abort: true,
+            ignore_compile_warnings: true,
             ..config
         },
         sui_move_natives::all_natives(/* silent */ false),

@@ -11,7 +11,7 @@ import {
 	type BalanceChange,
 	type BalanceChangeSummary,
 } from '@mysten/core';
-import classNames from 'clsx';
+import classNames from 'classnames';
 import { useMemo } from 'react';
 
 import { Card } from '../Card';

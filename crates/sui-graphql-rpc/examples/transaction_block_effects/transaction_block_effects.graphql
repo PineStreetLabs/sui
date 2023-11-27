@@ -12,7 +12,7 @@
         }
         lamportVersion
         gasEffects {
-          gasSummary {
+          gasSummary{
             computationCost
             storageCost
             storageRebate
@@ -27,11 +27,6 @@
             }
           }
           amount
-          coinType {
-            repr
-            signature
-            layout
-          }
         }
         dependencies {
           sender {

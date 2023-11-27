@@ -23,12 +23,12 @@ export function RecoverManyPage() {
 	const navigate = useNavigate();
 	useEffect(() => {
 		if (
-			!allAccountSources.isPending &&
+			!allAccountSources.isLoading &&
 			!allAccountSources.data?.find(({ type }) => type === 'mnemonic')
 		) {
 			navigate('/', { replace: true });
 		}
-	}, [allAccountSources.isPending, allAccountSources.data, navigate]);
+	}, [allAccountSources.isLoading, allAccountSources.data, navigate]);
 	const { value } = useForgotPasswordContext();
 	const addRecoveryDataMutation = useRecoveryDataMutation();
 	const [recoverInfo, setRecoverInfo] = useState<{ title: string; accountSourceID: string } | null>(
@@ -78,7 +78,7 @@ export function RecoverManyPage() {
 				title={recoverInfo?.title}
 				showModal={!!recoverInfo}
 				closeOverlay={() => {
-					if (addRecoveryDataMutation.isPending) {
+					if (addRecoveryDataMutation.isLoading) {
 						return;
 					}
 					setRecoverInfo(null);

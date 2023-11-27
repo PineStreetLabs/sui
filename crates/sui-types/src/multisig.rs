@@ -3,8 +3,7 @@
 
 use crate::{
     crypto::{CompressedSignature, DefaultHash, SignatureScheme},
-    signature::{AuthenticatorTrait, GenericSignature, VerifyParams},
-    zk_login_authenticator::ZkLoginAuthenticator,
+    signature::{AuthenticatorTrait, VerifyParams},
 };
 pub use enum_dispatch::enum_dispatch;
 use fastcrypto::{
@@ -28,7 +27,7 @@ use std::{
 
 use crate::{
     base_types::{EpochId, SuiAddress},
-    crypto::PublicKey,
+    crypto::{PublicKey, Signature},
     error::SuiError,
 };
 
@@ -76,22 +75,15 @@ impl Hash for MultiSig {
 }
 
 impl AuthenticatorTrait for MultiSig {
-    fn check_author(&self) -> bool {
-        false
-    }
-    fn verify_user_authenticator_epoch(&self, epoch_id: EpochId) -> Result<(), SuiError> {
-        // If there is any zkLogin signatures, filter and check epoch for each.
-        self.get_zklogin_sigs()
-            .iter()
-            .try_for_each(|s| s.verify_user_authenticator_epoch(epoch_id))
+    fn verify_user_authenticator_epoch(&self, _: EpochId) -> Result<(), SuiError> {
+        Ok(())
     }
 
     fn verify_uncached_checks<T>(
         &self,
         _value: &IntentMessage<T>,
         _author: SuiAddress,
-        _verify_params: &VerifyParams,
-        _check_author: bool,
+        _aux_verify_data: &VerifyParams,
     ) -> Result<(), SuiError>
     where
         T: Serialize,
@@ -103,35 +95,26 @@ impl AuthenticatorTrait for MultiSig {
         &self,
         value: &IntentMessage<T>,
         author: SuiAddress,
-        verify_params: &VerifyParams,
-        _check_author: bool,
+        _aux_verify_data: &VerifyParams,
     ) -> Result<(), SuiError>
     where
         T: Serialize,
     {
-        self.multisig_pk
-            .validate()
-            .map_err(|_| SuiError::InvalidSignature {
-                error: "Invalid multisig".to_string(),
-            })?;
+        self.validate().map_err(|_| SuiError::InvalidSignature {
+            error: "Invalid multisig".to_string(),
+        })?;
 
         if SuiAddress::from(&self.multisig_pk) != author {
             return Err(SuiError::InvalidSignature {
                 error: "Invalid address".to_string(),
             });
         }
-
-        if !self.get_zklogin_sigs().is_empty() && !verify_params.accept_zklogin_in_multisig {
-            return Err(SuiError::InvalidSignature {
-                error: "zkLogin sig not supported inside multisig".to_string(),
-            });
-        }
-
         let mut weight_sum: u16 = 0;
         let message = bcs::to_bytes(&value).expect("Message serialization should not fail");
         let mut hasher = DefaultHash::default();
         hasher.update(message);
         let digest = hasher.finalize().digest;
+
         // Verify each signature against its corresponding signature scheme and public key.
         // TODO: further optimization can be done because multiple Ed25519 signatures can be batch verified.
         for (sig, i) in self.sigs.iter().zip(as_indices(self.bitmap)?) {
@@ -182,12 +165,6 @@ impl AuthenticatorTrait for MultiSig {
                         })?,
                     )
                 }
-                CompressedSignature::ZkLogin(GenericSignature::ZkLoginAuthenticator(z)) => {
-                    // Author is verified checked against multisig pk, do not verify author within zkLogin authenticator.
-                    z.verify_claims(value, author, verify_params, self.check_author())
-                        .map_err(|_| FastCryptoError::InvalidSignature)
-                }
-                _ => Err(FastCryptoError::InvalidSignature),
             };
             if res.is_ok() {
                 weight_sum += *weight as u16;
@@ -243,7 +220,7 @@ impl MultiSig {
     /// [enum MultiSigPublicKey]. e.g. for [pk1, pk2, pk3, pk4, pk5],
     /// [sig1, sig2, sig5] is valid, but [sig2, sig1, sig5] is invalid.
     pub fn combine(
-        full_sigs: Vec<GenericSignature>,
+        full_sigs: Vec<Signature>,
         multisig_pk: MultiSigPublicKey,
     ) -> Result<Self, SuiError> {
         multisig_pk
@@ -283,7 +260,7 @@ impl MultiSig {
         })
     }
 
-    pub fn init_and_validate(&mut self) -> Result<Self, FastCryptoError> {
+    pub fn validate(&self) -> Result<(), FastCryptoError> {
         if self.sigs.len() > self.multisig_pk.pk_map.len()
             || self.sigs.is_empty()
             || self.bitmap > MAX_BITMAP_VALUE
@@ -291,23 +268,7 @@ impl MultiSig {
             return Err(FastCryptoError::InvalidInput);
         }
         self.multisig_pk.validate()?;
-        let sigs = std::mem::take(&mut self.sigs);
-        let mut new_sigs = Vec::with_capacity(sigs.len());
-
-        for s in sigs {
-            match s {
-                CompressedSignature::ZkLogin(mut s) => match s {
-                    GenericSignature::ZkLoginAuthenticator(ref mut z) => {
-                        z.inputs.init()?;
-                        new_sigs.push(CompressedSignature::ZkLogin(s));
-                    }
-                    _ => return Err(FastCryptoError::InvalidInput),
-                },
-                _ => new_sigs.push(s),
-            }
-        }
-        self.sigs = new_sigs;
-        Ok(self.to_owned())
+        Ok(())
     }
 
     pub fn get_pk(&self) -> &MultiSigPublicKey {
@@ -316,18 +277,6 @@ impl MultiSig {
 
     pub fn get_sigs(&self) -> &[CompressedSignature] {
         &self.sigs
-    }
-
-    pub fn get_zklogin_sigs(&self) -> Vec<ZkLoginAuthenticator> {
-        self.sigs
-            .iter()
-            .filter_map(|s| match s {
-                CompressedSignature::ZkLogin(GenericSignature::ZkLoginAuthenticator(z)) => {
-                    Some(z.to_owned())
-                }
-                _ => None,
-            })
-            .collect::<Vec<ZkLoginAuthenticator>>()
     }
 
     pub fn get_indices(&self) -> Result<Vec<u8>, SuiError> {
@@ -342,10 +291,10 @@ impl ToFromBytes for MultiSig {
         {
             return Err(FastCryptoError::InvalidInput);
         }
-        let mut multisig: MultiSig =
+        let multisig: MultiSig =
             bcs::from_bytes(&bytes[1..]).map_err(|_| FastCryptoError::InvalidSignature)?;
-        let initialized = multisig.init_and_validate()?;
-        Ok(initialized)
+        multisig.validate()?;
+        Ok(multisig)
     }
 }
 

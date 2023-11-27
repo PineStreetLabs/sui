@@ -15,14 +15,13 @@ pub mod executor;
 pub mod verifier;
 
 mod latest;
-mod next_vm;
 mod v0;
-mod v1;
+mod vm_rework;
 
 #[cfg(test)]
 mod tests;
 
-pub const NEXT_VM: u64 = u64::MAX;
+pub const VM_REWORK: u64 = u64::MAX;
 pub fn executor(
     protocol_config: &ProtocolConfig,
     paranoid_type_checks: bool,
@@ -36,19 +35,13 @@ pub fn executor(
             silent,
         )?),
 
-        1 => Arc::new(v1::Executor::new(
+        1 => Arc::new(latest::Executor::new(
             protocol_config,
             paranoid_type_checks,
             silent,
         )?),
 
-        2 => Arc::new(latest::Executor::new(
-            protocol_config,
-            paranoid_type_checks,
-            silent,
-        )?),
-
-        NEXT_VM => Arc::new(next_vm::Executor::new(
+        VM_REWORK => Arc::new(vm_rework::Executor::new(
             protocol_config,
             paranoid_type_checks,
             silent,
@@ -66,9 +59,12 @@ pub fn verifier<'m>(
     let version = protocol_config.execution_version_as_option().unwrap_or(0);
     match version {
         0 => Box::new(v0::Verifier::new(protocol_config, is_metered, metrics)),
-        1 => Box::new(v1::Verifier::new(protocol_config, is_metered, metrics)),
-        2 => Box::new(latest::Verifier::new(protocol_config, is_metered, metrics)),
-        NEXT_VM => Box::new(next_vm::Verifier::new(protocol_config, is_metered, metrics)),
+        1 => Box::new(latest::Verifier::new(protocol_config, is_metered, metrics)),
+        VM_REWORK => Box::new(vm_rework::Verifier::new(
+            protocol_config,
+            is_metered,
+            metrics,
+        )),
         v => panic!("Unsupported execution version {v}"),
     }
 }
