@@ -50,7 +50,6 @@ serde_test.workspace = true
 test-utils = { path = "../test-utils", package = "narwhal-test-utils" }
 
 [build-dependencies]
-prost-build.workspace = true
 rustversion.workspace = true
 tonic-build.workspace = true
 anemo-build.workspace = true
