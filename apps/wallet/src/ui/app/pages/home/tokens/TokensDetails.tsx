@@ -1,6 +1,7 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { allowedSwapCoinsList } from '_app/hooks/useDeepBook';
 import { useIsWalletDefiEnabled } from '_app/hooks/useIsWalletDefiEnabled';
 import { LargeButton } from '_app/shared/LargeButton';
 import { Text } from '_app/shared/text';
@@ -9,12 +10,7 @@ import Alert from '_components/alert';
 import { CoinIcon } from '_components/coin-icon';
 import Loading from '_components/loading';
 import { filterAndSortTokenBalances } from '_helpers';
-import {
-	useAllowedSwapCoinsList,
-	useAppSelector,
-	useCoinsReFetchingConfig,
-	useSortedCoinsByCategories,
-} from '_hooks';
+import { useAppSelector, useCoinsReFetchingConfig, useSortedCoinsByCategories } from '_hooks';
 import { ampli } from '_src/shared/analytics/ampli';
 import { API_ENV } from '_src/shared/api-env';
 import { FEATURES } from '_src/shared/experimentation/features';
@@ -25,14 +21,15 @@ import { usePinnedCoinTypes } from '_src/ui/app/hooks/usePinnedCoinTypes';
 import FaucetRequestButton from '_src/ui/app/shared/faucet/FaucetRequestButton';
 import PageTitle from '_src/ui/app/shared/PageTitle';
 import { useFeature } from '@growthbook/growthbook-react';
-import { useAppsBackend, useCoinMetadata, useFormatCoin, useResolveSuiNSName } from '@mysten/core';
+import { useAppsBackend, useFormatCoin, useResolveSuiNSName } from '@mysten/core';
 import { useSuiClientQuery } from '@mysten/dapp-kit';
 import { Info12, Pin16, Unpin16 } from '@mysten/icons';
 import { type CoinBalance as CoinBalanceType } from '@mysten/sui.js/client';
-import { formatAddress, parseStructTag, SUI_TYPE_ARG } from '@mysten/sui.js/utils';
+import { Coin } from '@mysten/sui.js/framework';
+import { formatAddress, MIST_PER_SUI, SUI_TYPE_ARG } from '@mysten/sui.js/utils';
 import { useQuery } from '@tanstack/react-query';
-import clsx from 'clsx';
-import { useEffect, useState, type ReactNode } from 'react';
+import clsx from 'classnames';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import Interstitial, { type InterstitialConfig } from '../interstitial';
 import { useOnrampProviders } from '../onramp/useOnrampProviders';
@@ -68,7 +65,6 @@ function TokenRowButton({
 	coinBalance,
 	children,
 	to,
-	onClick,
 }: {
 	coinBalance: CoinBalanceType;
 	children: ReactNode;
@@ -79,7 +75,6 @@ function TokenRowButton({
 		<ButtonOrLink
 			to={to}
 			key={coinBalance.coinType}
-			onClick={onClick}
 			className="no-underline text-subtitle font-medium text-steel hover:font-semibold hover:text-hero"
 		>
 			{children}
@@ -98,12 +93,11 @@ export function TokenRow({
 }) {
 	const coinType = coinBalance.coinType;
 	const balance = BigInt(coinBalance.totalBalance);
-	const [formatted, symbol, { data: coinMeta }] = useFormatCoin(balance, coinType);
+	const [formatted, symbol] = useFormatCoin(balance, coinType);
 	const Tag = onClick ? 'button' : 'div';
 	const params = new URLSearchParams({
 		type: coinBalance.coinType,
 	});
-	const allowedSwapCoinsList = useAllowedSwapCoinsList();
 
 	const isRenderSwapButton = allowedSwapCoinsList.includes(coinType);
 
@@ -118,44 +112,26 @@ export function TokenRow({
 			<div className="flex gap-2.5">
 				<CoinIcon coinType={coinType} size="md" />
 				<div className="flex flex-col gap-1 items-start">
-					<Text variant="body" color="gray-90" weight="semibold" truncate>
-						{coinMeta?.name || symbol}
+					<Text variant="body" color="gray-90" weight="semibold">
+						{symbol}
 					</Text>
 
-					{renderActions && (
-						<div className="group-hover:hidden">
-							<Text variant="subtitle" color="steel-dark" weight="medium">
-								{symbol}
-							</Text>
-						</div>
-					)}
-
 					{renderActions ? (
-						<div className="group-hover:flex hidden gap-2.5 items-center">
+						<div className="group-hover:visible invisible gap-2.5 items-center flex">
 							<TokenRowButton
 								coinBalance={coinBalance}
 								to={`/send?${params.toString()}`}
 								onClick={() =>
 									ampli.selectedCoin({
 										coinType: coinBalance.coinType,
-										totalBalance: Number(formatted),
+										totalBalance: Number(BigInt(coinBalance.totalBalance) / MIST_PER_SUI),
 									})
 								}
 							>
 								Send
 							</TokenRowButton>
 							{isRenderSwapButton && (
-								<TokenRowButton
-									coinBalance={coinBalance}
-									to={`/swap?${params.toString()}`}
-									onClick={() => {
-										ampli.clickedSwapCoin({
-											coinType: coinBalance.coinType,
-											totalBalance: Number(formatted),
-											sourceFlow: 'TokenRow',
-										});
-									}}
-								>
+								<TokenRowButton coinBalance={coinBalance} to={`/swap?${params.toString()}`}>
 									Swap
 								</TokenRowButton>
 							)}
@@ -267,23 +243,6 @@ export function MyTokens({
 	);
 }
 
-function getMostNestedName(parsed: ReturnType<typeof parseStructTag>) {
-	if (parsed.typeParams.length === 0) {
-		return parsed.name;
-	}
-
-	if (typeof parsed.typeParams[0] === 'string') {
-		return parsed.typeParams[0];
-	}
-
-	return getMostNestedName(parsed.typeParams[0]);
-}
-
-function getFallbackSymbol(coinType: string) {
-	const parsed = parseStructTag(coinType);
-	return getMostNestedName(parsed);
-}
-
 function TokenDetails({ coinType }: TokenDetailsProps) {
 	const isDefiWalletEnabled = useIsWalletDefiEnabled();
 	const [interstitialDismissed, setInterstitialDismissed] = useState<boolean>(false);
@@ -295,7 +254,7 @@ function TokenDetails({ coinType }: TokenDetailsProps) {
 	const {
 		data: coinBalance,
 		isError,
-		isPending,
+		isLoading,
 		isFetched,
 	} = useSuiClientQuery(
 		'getBalance',
@@ -319,7 +278,7 @@ function TokenDetails({ coinType }: TokenDetailsProps) {
 
 	const {
 		data: coinBalances,
-		isPending: coinBalancesLoading,
+		isLoading: coinBalancesLoading,
 		isFetched: coinBalancesFetched,
 	} = useSuiClientQuery(
 		'getAllBalances',
@@ -339,13 +298,10 @@ function TokenDetails({ coinType }: TokenDetailsProps) {
 	const { providers } = useOnrampProviders();
 
 	const tokenBalance = BigInt(coinBalance?.totalBalance ?? 0);
-	const [formatted] = useFormatCoin(tokenBalance, activeCoinType);
 
-	const { data: coinMetadata } = useCoinMetadata(activeCoinType);
-	const coinSymbol = coinMetadata ? coinMetadata.symbol : getFallbackSymbol(activeCoinType);
-
+	const coinSymbol = useMemo(() => Coin.getCoinSymbol(activeCoinType), [activeCoinType]);
 	// Avoid perpetual loading state when fetching and retry keeps failing add isFetched check
-	const isFirstTimeLoading = isPending && !isFetched;
+	const isFirstTimeLoading = isLoading && !isFetched;
 
 	useEffect(() => {
 		const dismissed =
@@ -418,7 +374,7 @@ function TokenDetails({ coinType }: TokenDetailsProps) {
 												<SvgSuiTokensStack className="h-14 w-14 text-steel" />
 												<div className="flex flex-col gap-2 justify-center">
 													<Text variant="pBodySmall" color="gray-80" weight="normal">
-														To send transactions on the Sui network, you need SUI in your wallet.
+														To conduct transactions on the Sui network, you need SUI in your wallet.
 													</Text>
 												</div>
 											</div>
@@ -466,17 +422,6 @@ function TokenDetails({ coinType }: TokenDetailsProps) {
 													  }).toString()}`
 													: ''
 											}`}
-											onClick={() => {
-												if (!coinBalance) {
-													return;
-												}
-
-												ampli.clickedSwapCoin({
-													coinType: coinBalance.coinType,
-													totalBalance: Number(formatted),
-													sourceFlow: 'LargeButton-TokenDetails',
-												});
-											}}
 										>
 											Swap
 										</LargeButton>

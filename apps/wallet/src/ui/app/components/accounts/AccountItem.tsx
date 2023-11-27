@@ -5,7 +5,7 @@ import { Text } from '_src/ui/app/shared/text';
 import { useResolveSuiNSName } from '@mysten/core';
 import { ArrowUpRight12, Copy12 } from '@mysten/icons';
 import { formatAddress } from '@mysten/sui.js/utils';
-import cn from 'clsx';
+import cn from 'classnames';
 import { forwardRef, type ReactNode } from 'react';
 
 import { getAccountBackgroundByType } from '../../helpers/accounts';

@@ -1,10 +1,6 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
-import { useDeepBookConfigs } from '_app/hooks/deepbook/useDeepBookConfigs';
 import { useActiveAccount } from '_app/hooks/useActiveAccount';
-import { DEFAULT_WALLET_FEE_ADDRESS, type Coins } from '_pages/swap/constants';
-import { FEATURES } from '_shared/experimentation/features';
-import { useFeatureValue } from '@growthbook/growthbook-react';
 import { useGetOwnedObjects } from '@mysten/core';
 import { useSuiClient } from '@mysten/dapp-kit';
 import { DeepBookClient } from '@mysten/deepbook';
@@ -13,11 +9,6 @@ import { createContext, useContext, useMemo, type ReactNode } from 'react';
 type DeepBookContextProps = {
 	client: DeepBookClient;
 	accountCapId: string;
-	configs: {
-		pools: Record<string, string[]>;
-		coinsMap: Record<Coins, string>;
-	};
-	walletFeeAddress: string;
 };
 
 const DeepBookContext = createContext<DeepBookContextProps | null>(null);
@@ -38,9 +29,6 @@ export function DeepBookContextProvider({ children }: DeepBookContextProviderPro
 	const suiClient = useSuiClient();
 	const activeAccount = useActiveAccount();
 	const activeAccountAddress = activeAccount?.address;
-
-	const configs = useDeepBookConfigs();
-	const walletFeeAddress = useFeatureValue(FEATURES.WALLET_FEE_ADDRESS, DEFAULT_WALLET_FEE_ADDRESS);
 
 	const { data } = useGetOwnedObjects(
 		activeAccountAddress,
@@ -63,10 +51,8 @@ export function DeepBookContextProvider({ children }: DeepBookContextProviderPro
 		return {
 			client: deepBookClient,
 			accountCapId,
-			configs,
-			walletFeeAddress,
 		};
-	}, [accountCapId, configs, deepBookClient, walletFeeAddress]);
+	}, [accountCapId, deepBookClient]);
 
 	return <DeepBookContext.Provider value={contextValue}>{children}</DeepBookContext.Provider>;
 }

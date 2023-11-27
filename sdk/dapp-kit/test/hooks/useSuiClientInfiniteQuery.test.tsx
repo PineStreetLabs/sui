@@ -38,11 +38,10 @@ describe('useSuiClientInfiniteQuery', () => {
 			{ wrapper },
 		);
 
-		expect(result.current.isPending).toBe(true);
+		expect(result.current.isLoading).toBe(true);
 		expect(result.current.isError).toBe(false);
 		expect(result.current.data).toBe(undefined);
 		expect(queryTransactionBlocks).toHaveBeenCalledWith({
-			cursor: null,
 			filter: {
 				FromAddress: '0x123',
 			},
@@ -50,10 +49,10 @@ describe('useSuiClientInfiniteQuery', () => {
 
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-		expect(result.current.isPending).toBe(false);
+		expect(result.current.isLoading).toBe(false);
 		expect(result.current.isError).toBe(false);
 		expect(result.current.data).toEqual({
-			pageParams: [null],
+			pageParams: [undefined],
 			pages: [pages[0]],
 		});
 
@@ -65,10 +64,10 @@ describe('useSuiClientInfiniteQuery', () => {
 
 		await waitFor(() => expect(result.current.isFetchingNextPage).toBe(false));
 
-		expect(result.current.isPending).toBe(false);
+		expect(result.current.isLoading).toBe(false);
 		expect(result.current.isError).toBe(false);
 		expect(result.current.data).toEqual({
-			pageParams: [null, 'page2'],
+			pageParams: [undefined, 'page2'],
 			pages: [pages[0], pages[1]],
 		});
 		expect(result.current.data?.pages[0].data[0].digest).toBe('0x123');

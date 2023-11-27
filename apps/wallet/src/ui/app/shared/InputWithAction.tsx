@@ -3,8 +3,7 @@
 
 import { Text } from '_app/shared/text';
 import NumberInput from '_components/number-input';
-import { cva, type VariantProps } from 'class-variance-authority';
-import clsx from 'clsx';
+import { cva, cx, type VariantProps } from 'class-variance-authority';
 import { useField, useFormikContext } from 'formik';
 import type { ComponentProps, ReactNode } from 'react';
 import { forwardRef } from 'react';
@@ -121,48 +120,7 @@ export function InputWithAction({
 	);
 }
 
-const inputWithActionZodFormStyles = cva(
-	[
-		'transition flex flex-row items-center px-3 py-2 text-body font-semibold',
-		'placeholder:text-gray-60 w-full pr-[calc(20%_+_24px)]',
-		'border-solid border text-steel-darker',
-		'relative',
-	],
-	{
-		variants: {
-			rounded: {
-				lg: 'rounded-2lg',
-				md: 'rounded-md',
-			},
-			noBorder: {
-				true: 'border-transparent',
-				false: '',
-			},
-			disabled: {
-				true: 'bg-gray-40',
-				false: 'bg-white hover:border-steel focus:border-steel',
-			},
-		},
-		defaultVariants: {
-			rounded: 'lg',
-			noBorder: false,
-		},
-		compoundVariants: [
-			{
-				noBorder: false,
-				disabled: true,
-				class: 'border-hero-darkest/10',
-			},
-			{
-				noBorder: false,
-				disabled: false,
-				class: 'border-steel',
-			},
-		],
-	},
-);
-
-type InputWithActionZodFormProps = VariantProps<typeof inputWithActionZodFormStyles> &
+type InputWithActionZodFormProps = VariantProps<typeof styles> &
 	(Omit<ComponentProps<'input'>, 'className' | 'type'> & {
 		type?: 'text' | 'number' | 'password' | 'email';
 	}) &
@@ -171,8 +129,6 @@ type InputWithActionZodFormProps = VariantProps<typeof inputWithActionZodFormSty
 		suffix?: ReactNode;
 		prefix?: ReactNode;
 		onActionClicked?: PillProps['onClick'];
-		info?: ReactNode;
-		actionDisabled?: boolean;
 	};
 
 export const InputWithActionButton = forwardRef<HTMLInputElement, InputWithActionZodFormProps>(
@@ -184,13 +140,12 @@ export const InputWithActionButton = forwardRef<HTMLInputElement, InputWithActio
 			type,
 			disabled = false,
 			actionDisabled = false,
+			dark,
 			rounded,
 			errorString,
 			value,
 			suffix,
 			prefix,
-			info,
-			noBorder,
 			...props
 		},
 		forwardRef,
@@ -205,39 +160,32 @@ export const InputWithActionButton = forwardRef<HTMLInputElement, InputWithActio
 
 		return (
 			<>
-				<div className={inputWithActionZodFormStyles({ rounded, noBorder, disabled })}>
+				<div className={cx(styles({ rounded }), 'relative')}>
 					{prefixContent}
 					<input
 						{...props}
-						value={value}
-						autoFocus
 						type={type}
-						className={clsx(
-							'bg-transparent z-10 border-none p-0 text-heading5 text-steel-darker font-semibold h-6 caret-hero',
-						)}
+						className="border-none p-0 text-body text-steel-darker font-semibold"
 						disabled={disabled}
 						ref={forwardRef}
 					/>
 					{suffix && value && (
 						<div className="absolute z-0 flex h-full max-w-full items-center border border-transparent">
 							{prefixContent}
-							<span className="invisible max-w-full text-heading5">{value}</span>
+							<span className="invisible max-w-full text-body">{value}</span>
 							<span className="ml-2 font-medium text-body text-steel">{suffix}</span>
 						</div>
 					)}
 
-					{(onActionClicked || info) && (
-						<div className="flex gap-2 items-center justify-end absolute mx-2 right-0 overflow-hidden">
-							{info}
-							{onActionClicked && (
-								<Pill
-									dark
-									text={actionText}
-									type={actionType}
-									disabled={disabled || actionDisabled}
-									onClick={onActionClicked}
-								/>
-							)}
+					{onActionClicked && (
+						<div className="flex items-center justify-end absolute right-0 max-w-[20%] mx-3 overflow-hidden">
+							<Pill
+								text={actionText}
+								type={actionType}
+								disabled={disabled}
+								onClick={onActionClicked}
+								dark={dark}
+							/>
 						</div>
 					)}
 				</div>

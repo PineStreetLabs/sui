@@ -33,18 +33,16 @@ use crate::handlers::transaction_handler::TransactionHandler;
 use crate::handlers::transaction_objects_handler::TransactionObjectsHandler;
 use crate::handlers::AnalyticsHandler;
 use crate::tables::{
-    CheckpointEntry, EventEntry, InputObjectKind, MoveCallEntry, MovePackageEntry, ObjectEntry,
-    ObjectStatus, OwnerType, TransactionEntry, TransactionObjectEntry,
+    CheckpointEntry, EventEntry, MoveCallEntry, MovePackageEntry, ObjectEntry, TransactionEntry,
+    TransactionObjectEntry,
 };
 use crate::writers::csv_writer::CSVWriter;
-use crate::writers::parquet_writer::ParquetWriter;
 use crate::writers::AnalyticsWriter;
 
 pub mod analytics_metrics;
 pub mod analytics_processor;
 pub mod errors;
 mod handlers;
-mod package_store;
 pub mod tables;
 mod writers;
 
@@ -88,24 +86,12 @@ pub struct AnalyticsIndexerConfig {
     // Remote object store where data gets written to
     #[command(flatten)]
     pub remote_store_config: ObjectStoreConfig,
-    // Remote object store path prefix to use while writing
-    #[clap(long, default_value = None, global = true)]
-    pub remote_store_path_prefix: Option<Path>,
     // File format to store data in i.e. csv, parquet, etc
     #[clap(long, value_enum, default_value = "csv", global = true)]
     pub file_format: FileFormat,
     // Type of data to write i.e. checkpoint, object, transaction, etc
     #[clap(long, value_enum, long, global = true)]
     pub file_type: FileType,
-    // Directory to contain the package cache for pipelines
-    #[clap(
-        long,
-        value_enum,
-        long,
-        global = true,
-        default_value = "/opt/sui/db/package_cache"
-    )]
-    pub package_cache_path: PathBuf,
 }
 
 #[derive(
@@ -126,14 +112,12 @@ pub struct AnalyticsIndexerConfig {
 #[repr(u8)]
 pub enum FileFormat {
     CSV = 0,
-    PARQUET = 1,
 }
 
 impl FileFormat {
     pub fn file_suffix(&self) -> &str {
         match self {
             FileFormat::CSV => "csv",
-            FileFormat::PARQUET => "parquet",
         }
     }
 }
@@ -192,81 +176,6 @@ impl FileType {
     }
 }
 
-pub enum ParquetValue {
-    U64(u64),
-    Str(String),
-    Bool(bool),
-    I64(i64),
-    OptionU64(Option<u64>),
-    OptionStr(Option<String>),
-}
-
-impl From<u64> for ParquetValue {
-    fn from(value: u64) -> Self {
-        Self::U64(value)
-    }
-}
-
-impl From<i64> for ParquetValue {
-    fn from(value: i64) -> Self {
-        Self::I64(value)
-    }
-}
-
-impl From<String> for ParquetValue {
-    fn from(value: String) -> Self {
-        Self::Str(value)
-    }
-}
-
-impl From<Option<u64>> for ParquetValue {
-    fn from(value: Option<u64>) -> Self {
-        Self::OptionU64(value)
-    }
-}
-
-impl From<Option<String>> for ParquetValue {
-    fn from(value: Option<String>) -> Self {
-        Self::OptionStr(value)
-    }
-}
-
-impl From<bool> for ParquetValue {
-    fn from(value: bool) -> Self {
-        Self::Bool(value)
-    }
-}
-
-impl From<OwnerType> for ParquetValue {
-    fn from(value: OwnerType) -> Self {
-        Self::Str(value.to_string())
-    }
-}
-
-impl From<ObjectStatus> for ParquetValue {
-    fn from(value: ObjectStatus) -> Self {
-        Self::Str(value.to_string())
-    }
-}
-
-impl From<Option<ObjectStatus>> for ParquetValue {
-    fn from(value: Option<ObjectStatus>) -> Self {
-        Self::OptionStr(value.map(|v| v.to_string()))
-    }
-}
-
-impl From<Option<InputObjectKind>> for ParquetValue {
-    fn from(value: Option<InputObjectKind>) -> Self {
-        Self::OptionStr(value.map(|v| v.to_string()))
-    }
-}
-
-pub trait ParquetSchema {
-    fn schema() -> Vec<String>;
-
-    fn get_column(&self, idx: usize) -> ParquetValue;
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct FileMetadata {
     pub file_type: FileType,
@@ -318,7 +227,7 @@ impl Handler for Processor {
 }
 
 impl Processor {
-    pub async fn new<S: Serialize + ParquetSchema + 'static>(
+    pub async fn new<S: Serialize + 'static>(
         handler: Box<dyn AnalyticsHandler<S>>,
         writer: Box<dyn AnalyticsWriter<S>>,
         starting_checkpoint_seq_num: CheckpointSequenceNumber,
@@ -421,10 +330,7 @@ pub async fn make_object_processor(
     config: AnalyticsIndexerConfig,
     metrics: AnalyticsMetrics,
 ) -> Result<Processor> {
-    let handler: Box<dyn AnalyticsHandler<ObjectEntry>> = Box::new(ObjectHandler::new(
-        &config.package_cache_path,
-        &config.rest_url,
-    ));
+    let handler: Box<dyn AnalyticsHandler<ObjectEntry>> = Box::new(ObjectHandler::new());
     let starting_checkpoint_seq_num =
         get_starting_checkpoint_seq_num(config.clone(), FileType::Object).await?;
     let writer = make_writer::<ObjectEntry>(
@@ -446,10 +352,7 @@ pub async fn make_event_processor(
     config: AnalyticsIndexerConfig,
     metrics: AnalyticsMetrics,
 ) -> Result<Processor> {
-    let handler: Box<dyn AnalyticsHandler<EventEntry>> = Box::new(EventHandler::new(
-        &config.package_cache_path,
-        &config.rest_url,
-    ));
+    let handler: Box<dyn AnalyticsHandler<EventEntry>> = Box::new(EventHandler::new());
     let starting_checkpoint_seq_num =
         get_starting_checkpoint_seq_num(config.clone(), FileType::Event).await?;
     let writer =
@@ -530,18 +433,13 @@ pub async fn make_move_call_processor(
     .await
 }
 
-pub fn make_writer<S: Serialize + ParquetSchema>(
+pub fn make_writer<S: Serialize>(
     config: AnalyticsIndexerConfig,
     file_type: FileType,
     starting_checkpoint_seq_num: u64,
 ) -> Result<Box<dyn AnalyticsWriter<S>>> {
     Ok(match config.file_format {
         FileFormat::CSV => Box::new(CSVWriter::new(
-            &config.checkpoint_dir,
-            file_type,
-            starting_checkpoint_seq_num,
-        )?),
-        FileFormat::PARQUET => Box::new(ParquetWriter::new(
             &config.checkpoint_dir,
             file_type,
             starting_checkpoint_seq_num,

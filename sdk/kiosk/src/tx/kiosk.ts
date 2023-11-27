@@ -9,6 +9,7 @@ import {
 } from '@mysten/sui.js/transactions';
 
 import { KIOSK_MODULE, KIOSK_TYPE, ObjectArgument } from '../types';
+import { objArg } from '../utils';
 
 /**
  * Create a new shared Kiosk and returns the [kiosk, kioskOwnerCap] tuple.
@@ -58,7 +59,7 @@ export function place(
 	tx.moveCall({
 		target: `${KIOSK_MODULE}::place`,
 		typeArguments: [itemType],
-		arguments: [tx.object(kiosk), tx.object(kioskCap), tx.object(item)],
+		arguments: [objArg(tx, kiosk), objArg(tx, kioskCap), objArg(tx, item)],
 	});
 }
 
@@ -81,7 +82,7 @@ export function lock(
 	tx.moveCall({
 		target: `${KIOSK_MODULE}::lock`,
 		typeArguments: [itemType],
-		arguments: [tx.object(kiosk), tx.object(kioskCap), tx.object(policy), tx.object(item)],
+		arguments: [objArg(tx, kiosk), objArg(tx, kioskCap), objArg(tx, policy), objArg(tx, item)],
 	});
 }
 
@@ -99,7 +100,7 @@ export function take(
 	const [item] = tx.moveCall({
 		target: `${KIOSK_MODULE}::take`,
 		typeArguments: [itemType],
-		arguments: [tx.object(kiosk), tx.object(kioskCap), tx.pure.id(itemId)],
+		arguments: [objArg(tx, kiosk), objArg(tx, kioskCap), tx.pure.address(itemId)],
 	});
 
 	return item;
@@ -120,7 +121,12 @@ export function list(
 	tx.moveCall({
 		target: `${KIOSK_MODULE}::list`,
 		typeArguments: [itemType],
-		arguments: [tx.object(kiosk), tx.object(kioskCap), tx.pure.id(itemId), tx.pure.u64(price)],
+		arguments: [
+			objArg(tx, kiosk),
+			objArg(tx, kioskCap),
+			tx.pure.address(itemId),
+			tx.pure.u64(price),
+		],
 	});
 }
 
@@ -138,7 +144,7 @@ export function delist(
 	tx.moveCall({
 		target: `${KIOSK_MODULE}::delist`,
 		typeArguments: [itemType],
-		arguments: [tx.object(kiosk), tx.object(kioskCap), tx.pure.id(itemId)],
+		arguments: [objArg(tx, kiosk), objArg(tx, kioskCap), tx.pure.address(itemId)],
 	});
 }
 
@@ -157,7 +163,7 @@ export function placeAndList(
 	tx.moveCall({
 		target: `${KIOSK_MODULE}::place_and_list`,
 		typeArguments: [itemType],
-		arguments: [tx.object(kiosk), tx.object(kioskCap), tx.object(item), tx.pure.u64(price)],
+		arguments: [objArg(tx, kiosk), objArg(tx, kioskCap), objArg(tx, item), tx.pure.u64(price)],
 	});
 }
 
@@ -175,7 +181,7 @@ export function purchase(
 	const [item, transferRequest] = tx.moveCall({
 		target: `${KIOSK_MODULE}::purchase`,
 		typeArguments: [itemType],
-		arguments: [tx.object(kiosk), tx.pure.id(itemId), tx.object(payment)],
+		arguments: [objArg(tx, kiosk), tx.pure.address(itemId), objArg(tx, payment)],
 	});
 
 	return [item, transferRequest];
@@ -195,7 +201,7 @@ export function withdrawFromKiosk(
 
 	const [coin] = tx.moveCall({
 		target: `${KIOSK_MODULE}::withdraw`,
-		arguments: [tx.object(kiosk), tx.object(kioskCap), amountArg],
+		arguments: [objArg(tx, kiosk), objArg(tx, kioskCap), amountArg],
 	});
 
 	return coin;
@@ -217,7 +223,7 @@ export function borrowValue(
 	const [item, promise] = tx.moveCall({
 		target: `${KIOSK_MODULE}::borrow_val`,
 		typeArguments: [itemType],
-		arguments: [tx.object(kiosk), tx.object(kioskCap), tx.pure.id(itemId)],
+		arguments: [objArg(tx, kiosk), objArg(tx, kioskCap), tx.pure.address(itemId)],
 	});
 
 	return [item, promise];
@@ -237,6 +243,6 @@ export function returnValue(
 	tx.moveCall({
 		target: `${KIOSK_MODULE}::return_val`,
 		typeArguments: [itemType],
-		arguments: [tx.object(kiosk), item, promise],
+		arguments: [objArg(tx, kiosk), item, promise],
 	});
 }

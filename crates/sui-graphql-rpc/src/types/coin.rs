@@ -5,47 +5,43 @@ use super::big_int::BigInt;
 use super::move_object::MoveObject;
 use async_graphql::*;
 
-use sui_types::coin::Coin as NativeCoin;
+use sui_types::coin::Coin as NativeSuiCoin;
 
-#[derive(Clone)]
+#[derive(Clone, SimpleObject)]
+#[graphql(complex)]
 pub(crate) struct Coin {
-    /// Representation of this Coin as a generic Move Object.
-    pub super_: MoveObject,
-
-    /// The deserialized representation of the Move Object's contents, as a `0x2::coin::Coin`.
-    pub native: NativeCoin,
+    pub id: ID,
+    #[graphql(skip)]
+    pub move_obj: MoveObject,
+    #[graphql(skip)]
+    pub balance: Option<BigInt>,
 }
 
-pub(crate) enum CoinDowncastError {
-    NotACoin,
-    Bcs(bcs::Error),
-}
-
-#[Object]
+#[ComplexObject]
 impl Coin {
-    /// Balance of the coin object
     async fn balance(&self) -> Option<BigInt> {
-        Some(BigInt::from(self.native.balance.value()))
-    }
-
-    /// Convert the coin object into a Move object
-    async fn as_move_object(&self) -> &MoveObject {
-        &self.super_
-    }
-}
-
-impl TryFrom<&MoveObject> for Coin {
-    type Error = CoinDowncastError;
-
-    fn try_from(move_object: &MoveObject) -> Result<Self, Self::Error> {
-        if !move_object.native.is_coin() {
-            return Err(CoinDowncastError::NotACoin);
+        if let Some(existing_balance) = &self.balance {
+            return Some(existing_balance.clone());
         }
 
-        Ok(Self {
-            super_: move_object.clone(),
-            native: bcs::from_bytes(move_object.native.contents())
-                .map_err(CoinDowncastError::Bcs)?,
-        })
+        self.move_obj
+            .native_object
+            .data
+            .try_as_move()
+            .and_then(|x| {
+                if x.is_coin() {
+                    Some(NativeSuiCoin::extract_balance_if_coin(
+                        &self.move_obj.native_object,
+                    ))
+                } else {
+                    None
+                }
+            })
+            .and_then(|x| x.expect("Coin should have balance."))
+            .map(BigInt::from)
+    }
+
+    async fn as_move_object(&self) -> Option<MoveObject> {
+        Some(self.move_obj.clone())
     }
 }

@@ -225,13 +225,13 @@ export function validatorsTableData(
 }
 
 function ValidatorPageResult() {
-	const { data, isPending, isSuccess, isError } = useSuiClientQuery('getLatestSuiSystemState');
+	const { data, isLoading, isSuccess, isError } = useSuiClientQuery('getLatestSuiSystemState');
 
 	const numberOfValidators = data?.activeValidators.length || 0;
 
 	const {
 		data: validatorEvents,
-		isPending: validatorsEventsLoading,
+		isLoading: validatorsEventsLoading,
 		isError: validatorEventError,
 	} = useGetValidatorsEvents({
 		limit: numberOfValidators,
@@ -347,7 +347,7 @@ function ValidatorPageResult() {
 						<div className="mt-8">
 							<ErrorBoundary>
 								<TableHeader>All Validators</TableHeader>
-								{(isPending || validatorsEventsLoading) && (
+								{(isLoading || validatorsEventsLoading) && (
 									<PlaceholderTable
 										rowCount={20}
 										rowHeight="13px"

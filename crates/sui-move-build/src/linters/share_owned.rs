@@ -84,9 +84,12 @@ impl SimpleAbsIntConstructor for ShareOwnedVerifier {
     fn new<'a>(
         _env: &CompilationEnv,
         _program: &'a Program,
-        _context: &'a CFGContext<'a>,
+        context: &'a CFGContext<'a>,
         _init_state: &mut <Self::AI<'a> as SimpleAbsInt>::State,
     ) -> Option<Self::AI<'a>> {
+        let Some(_) = &context.module else {
+            return None;
+        };
         Some(ShareOwnedVerifierAI)
     }
 }

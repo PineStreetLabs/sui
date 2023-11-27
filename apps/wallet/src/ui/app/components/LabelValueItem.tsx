@@ -3,7 +3,7 @@
 
 import { Link } from '_src/ui/app/shared/Link';
 import { Text } from '_src/ui/app/shared/text';
-import cl from 'clsx';
+import cl from 'classnames';
 import { type ReactNode } from 'react';
 
 function getDisplayUrl(link: string) {

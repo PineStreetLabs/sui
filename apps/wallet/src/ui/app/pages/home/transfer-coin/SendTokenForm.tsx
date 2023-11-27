@@ -150,9 +150,9 @@ export function SendTokenForm({
 	const client = useSuiClient();
 	const activeAddress = useActiveAddress();
 	// Get all coins of the type
-	const { data: coinsData, isPending: coinsIsPending } = useGetAllCoins(coinType, activeAddress!);
+	const { data: coinsData, isLoading: coinsIsLoading } = useGetAllCoins(coinType, activeAddress!);
 
-	const { data: suiCoinsData, isPending: suiCoinsIsPending } = useGetAllCoins(
+	const { data: suiCoinsData, isLoading: suiCoinsIsLoading } = useGetAllCoins(
 		SUI_TYPE_ARG,
 		activeAddress!,
 	);
@@ -180,7 +180,7 @@ export function SendTokenForm({
 	return (
 		<Loading
 			loading={
-				queryResult.isPending || coinMetadata.isPending || suiCoinsIsPending || coinsIsPending
+				queryResult.isLoading || coinMetadata.isLoading || suiCoinsIsLoading || coinsIsLoading
 			}
 		>
 			<Formik
@@ -266,7 +266,7 @@ export function SendTokenForm({
 											}}
 											actionDisabled={
 												parseAmount(values?.amount, coinDecimals) === coinBalance ||
-												queryResult.isPending ||
+												queryResult.isLoading ||
 												!coinBalance
 											}
 										/>

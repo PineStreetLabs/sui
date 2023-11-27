@@ -101,7 +101,7 @@ export function Signatures({ transaction }: Props) {
 				return {
 					signatureScheme: parsed.signatureScheme,
 					address: parsed.zkLogin.address,
-					signature: parsed.signature,
+					signature: parsed.bytes,
 				};
 			}
 

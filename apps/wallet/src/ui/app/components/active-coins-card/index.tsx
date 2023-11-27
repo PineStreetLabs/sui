@@ -21,7 +21,7 @@ export function ActiveCoinsCard({
 	const selectedAddress = useActiveAddress();
 
 	const { staleTime, refetchInterval } = useCoinsReFetchingConfig();
-	const { data: coins, isPending } = useSuiClientQuery(
+	const { data: coins, isLoading } = useSuiClientQuery(
 		'getAllBalances',
 		{ owner: selectedAddress! },
 		{
@@ -35,7 +35,7 @@ export function ActiveCoinsCard({
 	const activeCoin = coins?.find(({ coinType }) => coinType === activeCoinType);
 
 	return (
-		<Loading loading={isPending}>
+		<Loading loading={isLoading}>
 			<div className="flex w-full">
 				{showActiveCoin ? (
 					activeCoin && (

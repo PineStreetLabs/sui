@@ -1,7 +1,6 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-#[allow(unused_const)]
 module sui::zklogin_verified_issuer {
     use std::string::String;
     use sui::transfer;
@@ -37,14 +36,8 @@ module sui::zklogin_verified_issuer {
         &verified_issuer.issuer
     }
 
-    /// Delete a VerifiedIssuer
-    public fun delete(verified_issuer: VerifiedIssuer) {
-        let VerifiedIssuer { id, owner: _, issuer: _ } = verified_issuer;
-        object::delete(id);
-    }
-
     /// Verify that the caller's address was created using zklogin with the given issuer. If so, a VerifiedIssuer object
-    /// with the issuers id transfered to the caller.
+    /// with the issuers id returned.
     ///
     /// Aborts with `EInvalidProof` if the verification fails.
     public fun verify_zklogin_issuer(

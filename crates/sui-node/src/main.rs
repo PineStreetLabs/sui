@@ -20,7 +20,7 @@ const GIT_REVISION: &str = {
         revision
     } else {
         let version = git_version::git_version!(
-            args = ["--always", "--abbrev=12", "--dirty", "--exclude", "*"],
+            args = ["--always", "--dirty", "--exclude", "*"],
             fallback = ""
         );
 

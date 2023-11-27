@@ -8,8 +8,7 @@ use crate::base_types::{
     VersionDigest,
 };
 use crate::digests::{EffectsAuxDataDigest, TransactionEventsDigest};
-use crate::effects::{InputSharedObject, TransactionEffectsAPI};
-use crate::execution::SharedInput;
+use crate::effects::{InputSharedObjectKind, TransactionEffectsAPI};
 use crate::execution_status::ExecutionStatus;
 use crate::gas::GasCostSummary;
 use crate::message_envelope::Message;
@@ -94,25 +93,19 @@ impl TransactionEffectsAPI for TransactionEffectsV2 {
             .collect()
     }
 
-    fn input_shared_objects(&self) -> Vec<InputSharedObject> {
+    fn input_shared_objects(&self) -> Vec<(ObjectRef, InputSharedObjectKind)> {
         self.changed_objects
             .iter()
             .filter_map(|(id, change)| match &change.input_state {
                 ObjectIn::Exist(((version, digest), Owner::Shared { .. })) => {
-                    Some(InputSharedObject::Mutate((*id, *version, *digest)))
+                    Some(((*id, *version, *digest), InputSharedObjectKind::Mutate))
                 }
                 _ => None,
             })
             .chain(self.unchanged_shared_objects.iter().map(
                 |(id, change_kind)| match change_kind {
                     UnchangedSharedKind::ReadOnlyRoot((version, digest)) => {
-                        InputSharedObject::ReadOnly((*id, *version, *digest))
-                    }
-                    UnchangedSharedKind::MutateDeleted(seqno) => {
-                        InputSharedObject::MutateDeleted(*id, *seqno)
-                    }
-                    UnchangedSharedKind::ReadDeleted(seqno) => {
-                        InputSharedObject::ReadDeleted(*id, *seqno)
+                        ((*id, *version, *digest), InputSharedObjectKind::ReadOnly)
                     }
                 },
             ))
@@ -290,9 +283,13 @@ impl TransactionEffectsAPI for TransactionEffectsV2 {
         &mut self.dependencies
     }
 
-    fn unsafe_add_input_shared_object_for_testing(&mut self, kind: InputSharedObject) {
+    fn unsafe_add_input_shared_object_for_testing(
+        &mut self,
+        obj_ref: ObjectRef,
+        kind: InputSharedObjectKind,
+    ) {
         match kind {
-            InputSharedObject::Mutate(obj_ref) => self.changed_objects.push((
+            InputSharedObjectKind::Mutate => self.changed_objects.push((
                 obj_ref.0,
                 EffectsObjectChange {
                     input_state: ObjectIn::Exist((
@@ -310,37 +307,14 @@ impl TransactionEffectsAPI for TransactionEffectsV2 {
                     id_operation: IDOperation::None,
                 },
             )),
-            InputSharedObject::ReadOnly(obj_ref) => self.unchanged_shared_objects.push((
+            InputSharedObjectKind::ReadOnly => self.unchanged_shared_objects.push((
                 obj_ref.0,
                 UnchangedSharedKind::ReadOnlyRoot((obj_ref.1, obj_ref.2)),
             )),
-            InputSharedObject::ReadDeleted(obj_id, seqno) => self
-                .unchanged_shared_objects
-                .push((obj_id, UnchangedSharedKind::ReadDeleted(seqno))),
-            InputSharedObject::MutateDeleted(obj_id, seqno) => self
-                .unchanged_shared_objects
-                .push((obj_id, UnchangedSharedKind::MutateDeleted(seqno))),
         }
     }
 
-    fn unsafe_add_deleted_live_object_for_testing(&mut self, obj_ref: ObjectRef) {
-        self.changed_objects.push((
-            obj_ref.0,
-            EffectsObjectChange {
-                input_state: ObjectIn::Exist((
-                    (obj_ref.1, obj_ref.2),
-                    Owner::AddressOwner(SuiAddress::default()),
-                )),
-                output_state: ObjectOut::ObjectWrite((
-                    obj_ref.2,
-                    Owner::AddressOwner(SuiAddress::default()),
-                )),
-                id_operation: IDOperation::None,
-            },
-        ))
-    }
-
-    fn unsafe_add_object_tombstone_for_testing(&mut self, obj_ref: ObjectRef) {
+    fn unsafe_add_deleted_object_for_testing(&mut self, obj_ref: ObjectRef) {
         self.changed_objects.push((
             obj_ref.0,
             EffectsObjectChange {
@@ -360,7 +334,7 @@ impl TransactionEffectsV2 {
         status: ExecutionStatus,
         executed_epoch: EpochId,
         gas_used: GasCostSummary,
-        shared_objects: Vec<SharedInput>,
+        shared_objects: Vec<ObjectRef>,
         transaction_digest: TransactionDigest,
         lamport_version: SequenceNumber,
         changed_objects: BTreeMap<ObjectID, EffectsObjectChange>,
@@ -370,21 +344,11 @@ impl TransactionEffectsV2 {
     ) -> Self {
         let unchanged_shared_objects = shared_objects
             .into_iter()
-            .filter_map(|shared_input| match shared_input {
-                SharedInput::Existing((id, version, digest)) => {
-                    if changed_objects.contains_key(&id) {
-                        None
-                    } else {
-                        Some((id, UnchangedSharedKind::ReadOnlyRoot((version, digest))))
-                    }
-                }
-                SharedInput::Deleted((id, version, mutable, _)) => {
-                    debug_assert!(!changed_objects.contains_key(&id));
-                    if mutable {
-                        Some((id, UnchangedSharedKind::MutateDeleted(version)))
-                    } else {
-                        Some((id, UnchangedSharedKind::ReadDeleted(version)))
-                    }
+            .filter_map(|(id, version, digest)| {
+                if changed_objects.contains_key(&id) {
+                    None
+                } else {
+                    Some((id, UnchangedSharedKind::ReadOnlyRoot((version, digest))))
                 }
             })
             .collect();
@@ -507,12 +471,7 @@ impl TransactionEffectsV2 {
         assert!(matches!(owner, Owner::AddressOwner(_)));
 
         for (id, _) in &self.unchanged_shared_objects {
-            assert!(
-                unique_ids.insert(*id),
-                "Duplicate object id: {:?}\n{:#?}",
-                id,
-                self
-            );
+            assert!(unique_ids.insert(*id));
         }
     }
 }
@@ -536,12 +495,8 @@ impl Default for TransactionEffectsV2 {
 }
 
 #[derive(Eq, PartialEq, Clone, Debug, Serialize, Deserialize)]
-pub enum UnchangedSharedKind {
+pub(crate) enum UnchangedSharedKind {
     /// Read-only shared objects from the input. We don't really need ObjectDigest
     /// for protocol correctness, but it will make it easier to verify untrusted read.
     ReadOnlyRoot(VersionDigest),
-    /// Deleted shared objects that appear mutably/owned in the input.
-    MutateDeleted(SequenceNumber),
-    /// Deleted shared objects that appear as read-only in the input.
-    ReadDeleted(SequenceNumber),
 }

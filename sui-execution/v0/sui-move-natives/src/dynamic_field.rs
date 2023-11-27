@@ -9,10 +9,9 @@ use crate::{
 use move_binary_format::errors::{PartialVMError, PartialVMResult};
 use move_core_types::{
     account_address::AccountAddress,
-    annotated_value as A,
     gas_algebra::InternalGas,
     language_storage::{StructTag, TypeTag},
-    runtime_value as R,
+    value::MoveTypeLayout,
     vm_status::StatusCode,
 };
 use move_vm_runtime::native_charge_gas_early_exit;
@@ -496,7 +495,7 @@ pub fn has_child_object_with_ty(
 fn get_tag_and_layouts(
     context: &NativeContext,
     ty: &Type,
-) -> PartialVMResult<Option<(StructTag, R::MoveTypeLayout, A::MoveTypeLayout)>> {
+) -> PartialVMResult<Option<(StructTag, MoveTypeLayout, MoveTypeLayout)>> {
     let tag = match context.type_to_type_tag(ty)? {
         TypeTag::Struct(s) => s,
         _ => {

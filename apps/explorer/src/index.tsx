@@ -16,7 +16,6 @@ import { queryClient } from './utils/queryClient';
 import './utils/sentry';
 
 import './index.css';
-import '@mysten/dapp-kit/dist/index.css';
 
 // Load Amplitude as early as we can:
 initAmplitude();

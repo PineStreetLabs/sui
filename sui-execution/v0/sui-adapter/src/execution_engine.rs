@@ -5,6 +5,7 @@ pub use checked::*;
 
 #[sui_macros::with_checked_arithmetic]
 mod checked {
+
     use crate::gas_charger::GasCharger;
     use crate::programmable_transactions;
     use crate::temporary_store::TemporaryStore;
@@ -38,7 +39,7 @@ mod checked {
     #[cfg(msim)]
     use sui_types::sui_system_state::advance_epoch_result_injection::maybe_modify_result;
     use sui_types::sui_system_state::{AdvanceEpochParams, ADVANCE_EPOCH_SAFE_MODE_FUNCTION_NAME};
-    use sui_types::transaction::CheckedInputObjects;
+    use sui_types::transaction::InputObjects;
     use sui_types::transaction::{
         Argument, CallArg, ChangeEpoch, Command, GenesisTransaction, ProgrammableTransaction,
         TransactionKind,
@@ -55,7 +56,7 @@ mod checked {
     #[instrument(name = "tx_execute_to_effects", level = "debug", skip_all)]
     pub fn execute_transaction_to_effects<Mode: ExecutionMode>(
         store: &dyn BackingStore,
-        input_objects: CheckedInputObjects,
+        input_objects: InputObjects,
         gas_coins: Vec<ObjectRef>,
         gas_status: SuiGasStatus,
         transaction_kind: TransactionKind,
@@ -73,7 +74,6 @@ mod checked {
         TransactionEffects,
         Result<Mode::ExecutionResults, ExecutionError>,
     ) {
-        let input_objects = input_objects.into_inner();
         let shared_object_refs = input_objects.filter_shared_objects();
         let mut transaction_dependencies = input_objects.transaction_dependencies();
         let mut temporary_store =
@@ -101,7 +101,6 @@ mod checked {
             metrics,
             enable_expensive_checks,
             deny_cert,
-            false,
         );
 
         let status = if let Err(error) = &execution_result {
@@ -184,10 +183,9 @@ mod checked {
         metrics: Arc<LimitsMetrics>,
         move_vm: &Arc<MoveVM>,
         tx_context: &mut TxContext,
-        input_objects: CheckedInputObjects,
+        input_objects: InputObjects,
         pt: ProgrammableTransaction,
     ) -> Result<InnerTemporaryStore, ExecutionError> {
-        let input_objects = input_objects.into_inner();
         let mut temporary_store =
             TemporaryStore::new(store, input_objects, tx_context.digest(), protocol_config);
         let mut gas_charger = GasCharger::new_unmetered(tx_context.digest());
@@ -215,7 +213,6 @@ mod checked {
         metrics: Arc<LimitsMetrics>,
         enable_expensive_checks: bool,
         deny_cert: bool,
-        contains_deleted_input: bool,
     ) -> (
         GasCostSummary,
         Result<Mode::ExecutionResults, ExecutionError>,
@@ -237,11 +234,6 @@ mod checked {
             let mut execution_result = if deny_cert {
                 Err(ExecutionError::new(
                     ExecutionErrorKind::CertificateDenied,
-                    None,
-                ))
-            } else if contains_deleted_input {
-                Err(ExecutionError::new(
-                    ExecutionErrorKind::InputObjectDeleted,
                     None,
                 ))
             } else {
@@ -447,13 +439,10 @@ mod checked {
                 )
             }
             TransactionKind::AuthenticatorStateUpdate(_) => {
-                panic!("AuthenticatorStateUpdate should not exist in execution layer v0");
-            }
-            TransactionKind::RandomnessStateUpdate(_) => {
-                panic!("RandomnessStateUpdate should not exist in execution layer v0");
+                panic!("AuthenticatorStateUpdate should not exist in suivm");
             }
             TransactionKind::EndOfEpochTransaction(_) => {
-                panic!("EndOfEpochTransaction should not exist in execution layer v0");
+                panic!("EndOfEpochTransaction should not exist in suivm");
             }
         }
     }

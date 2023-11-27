@@ -3,9 +3,10 @@
 
 #[test_only]
 module sui::zklogin_verified_id_tests {
-    use sui::zklogin_verified_id::{check_zklogin_id, delete, verify_zklogin_id, VerifiedID};
+    use sui::zklogin_verified_id::{check_zklogin_id, verify_zklogin_id, VerifiedID};
     use sui::address;
     use std::string::utf8;
+    use sui::bag::add;
     use sui::test_scenario;
 
     #[test]
@@ -108,8 +109,6 @@ module sui::zklogin_verified_id_tests {
         test_scenario::next_tx(scenario, address);
         {
             assert!(test_scenario::has_most_recent_for_sender<VerifiedID>(scenario), 0);
-            delete(test_scenario::take_from_sender<VerifiedID>(scenario));
-            assert!(!test_scenario::has_most_recent_for_sender<VerifiedID>(scenario), 1);
         };
         test_scenario::end(scenario_val);
     }

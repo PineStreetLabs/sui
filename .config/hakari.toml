@@ -40,7 +40,3 @@ third-party = [
 workspace-members = [
     "x",
 ]
-third-party = [
-    { name = "rocksdb" },
-    { name = "librocksdb-sys" },
-]

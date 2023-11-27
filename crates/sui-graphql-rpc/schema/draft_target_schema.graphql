@@ -177,9 +177,6 @@ scalar Base64
 # ISO-8601 Date and Time
 scalar DateTime
 
-# Arbitrary JSON data
-scalar JSON
-
 # Scalar representing the contents of a Move Value, corresponding to
 # the following recursive type:
 #
@@ -378,7 +375,7 @@ enum Feature {
   SYSTEM_STATE
 }
 
-interface IOwner {
+interface ObjectOwner {
   location: SuiAddress!
 
   objectConnection(
@@ -388,7 +385,7 @@ interface IOwner {
     before: String,
     # Enhancement (post-MVP) relies on compound filters.
     filter: ObjectFilter,
-  ): MoveObjectConnection
+  ): ObjectConnection
 
   balance(type: String!): Balance
   balanceConnection(
@@ -407,22 +404,12 @@ interface IOwner {
     type: String,
   ): CoinConnection
 
-  stakedSuiConnection(
+  stakeConnection(
     first: Int,
     after: String,
     last: Int,
     before: String,
   ): StakeConnection
-
-  dynamicField(dynamicFieldName: DynamicFieldName!): DynamicField
-  dynamicFieldConnection(
-    first: Int,
-    after: String,
-    last: Int,
-    before: String,
-    # Enhancement (post-MVP) to filter dynamic fields by type.
-    filter: DynamicFieldFilter,
-  ): DynamicFieldConnection
 
   defaultNameServiceName: String
   nameServiceNameConnection(
@@ -433,43 +420,14 @@ interface IOwner {
   ): NameServiceNameConnection
 }
 
-interface IObject {
-  version: Int!
-  digest: String!
-  owner: Owner
-  kind: ObjectKind
-
-  previousTransactionBlock: TransactionBlock
-  storageRebate: BigInt
-
-  display: [DisplayEntry!]
-
-  # Transaction Blocks that sent objects to this object
-  receivedTransactionBlockConnection(
-    first: Int,
-    after: String,
-    last: Int,
-    before: String,
-    # Enhancement (post-MVP) relies on compound filters.
-    filter: TransactionBlockFilter,
-  ): TransactionBlockConnection
-
-  bcs: Base64
-}
-
-interface IMoveObject {
-  contents: MoveValue
-  hasPublicTransfer: Boolean
-}
-
 # Returned by Object.owner, where we can't disambiguate between
 # Address and Object.
-type Owner implements IOwner {
+type Owner implements ObjectOwner {
   asAddress: Address
   asObject: Object
 }
 
-type Address implements IOwner {
+type Address implements ObjectOwner {
   transactionBlockConnection(
     first: Int,
     after: String,
@@ -495,9 +453,42 @@ enum ObjectKind {
   IMMUTABLE
 }
 
-type Object implements IOwner & IObject {
+type Object implements ObjectOwner {
+  id: ID!
+  version: Int!
+  digest: String!
+  owner: Owner
+  kind: ObjectKind
+
+  previousTransactionBlock: TransactionBlock
+  storageRebate: BigInt
+
+  display: [DisplayEntry!]
+
   asMoveObject: MoveObject
   asMovePackage: MovePackage
+
+  # Transaction Blocks that sent objects to this object
+  receivedTransactionBlockConnection(
+    first: Int,
+    after: String,
+    last: Int,
+    before: String,
+    # Enhancement (post-MVP) relies on compound filters.
+    filter: TransactionBlockFilter,
+  ): TransactionBlockConnection
+
+  dynamicField(dynamicFieldName: DynamicFieldName!): DynamicField
+  dynamicFieldConnection(
+    first: Int,
+    after: String,
+    last: Int,
+    before: String,
+    # Enhancement (post-MVP) to filter dynamic fields by type.
+    filter: DynamicFieldFilter,
+  ): DynamicFieldConnection
+
+  bcs: Base64
 }
 
 type DisplayEntry {
@@ -672,6 +663,7 @@ type SafeMode {
 }
 
 type Checkpoint {
+  id: ID!
   digest: String!
   sequenceNumber: Int!
 
@@ -714,6 +706,7 @@ type CommitteeMember {
 }
 
 type TransactionBlock {
+  id: ID
   digest: String!
 
   senders: [Address]
@@ -840,7 +833,7 @@ type TransactionBlockEffects {
   objectReads: [Object]
   objectChanges: [ObjectChange]
   balanceChanges: [BalanceChange]
-  timestamp: DateTime
+
   epoch: Epoch
   checkpoint: Checkpoint
 
@@ -896,6 +889,8 @@ type BalanceChange {
 }
 
 type Event {
+  id: ID!
+
   # Module that the event was emitted by
   sendingModuleId: MoveModuleId
 
@@ -910,16 +905,19 @@ type Event {
 }
 
 type Balance {
+  id: ID!
   coinType: MoveType
   coinObjectCount: Int
   totalBalance: BigInt
 }
 
-type Coin implements IOwner & IObject {
+type Coin {
+  id: ID!
   balance: BigInt
+  asMoveObject: MoveObject!
 }
 
-type StakedSui implements IOwner & IObject {
+type StakedSui {
   status: StakeStatus
   requestEpoch: Epoch
   activeEpoch: Epoch
@@ -927,6 +925,8 @@ type StakedSui implements IOwner & IObject {
 
   # Only available if status is `ACTIVE`.
   estimatedReward: BigInt
+
+  asMoveObject: MoveObject!
 }
 
 enum StakeStatus {
@@ -935,13 +935,15 @@ enum StakeStatus {
   UNSTAKED
 }
 
-type CoinMetadata implements IOwner & IObject {
+type CoinMetadata {
   decimals: Int
   name: String
   symbol: String
   description: String
   iconURL: String
   supply: BigInt
+
+  asMoveObject: MoveObject!
 }
 
 input DynamicFieldName {
@@ -950,19 +952,23 @@ input DynamicFieldName {
 }
 
 type DynamicField {
+  id: ID!
   name: MoveValue
   value: DynamicFieldValue
 }
 
 union DynamicFieldValue = MoveObject | MoveValue
 
-type MoveObject implements IOwner & IObject & IMoveObject {
+type MoveObject {
+  contents: MoveValue
+  hasPublicTransfer: Boolean
+
   asCoin: Coin
   asStakedSui: StakedSui
-  asCoinMetadata: CoinMetadata
+  asObject: Object!
 }
 
-type MovePackage implements IOwner & IObject {
+type MovePackage {
   module(name: String!): MoveModule
   moduleConnection(
     first: Int,
@@ -971,22 +977,7 @@ type MovePackage implements IOwner & IObject {
     before: String,
   ): MoveModuleConnection
 
-  linkage: [Linkage!]
-  origins: [TypeOrigin!]
-
-  moduleBcs: Base64
-}
-
-type Linkage {
-  originalId: SuiAddress!
-  upgradedId: SuiAddress!
-  version: Int!
-}
-
-type TypeOrigin {
-  module: String!
-  name: String!
-  package: SuiAddress!
+  asObject: Object!
 }
 
 type MoveModuleId {
@@ -1017,6 +1008,7 @@ type MoveFunctionTypeParameter {
 }
 
 type MoveModule {
+  id: ID!
   fileFormatVersion: Int!
 
   moduleId: MoveModuleId!
@@ -1057,6 +1049,7 @@ type MoveField {
 }
 
 type MoveFunction {
+  id: ID!
   module: MoveModule!
   name: String!
 
@@ -1071,7 +1064,6 @@ type MoveFunction {
 type MoveValue {
   type: MoveType!
   data: MoveData
-  json: JSON
 
   bcs: Base64
 }
@@ -1099,7 +1091,9 @@ type OpenMoveType {
 # Metrics (omitted for brevity)
 type NetworkMetrics
 type MoveCallMetrics
-type AddressMetrics
+type AddressMetrics {
+  id: ID!
+}
 
 # Execution
 
@@ -1202,17 +1196,6 @@ type ObjectEdge {
   node: Object!
 }
 
-# MoveObject
-type MoveObjectConnection {
-  edges: [MoveObjectEdge!]!
-  pageInfo: PageInfo!
-}
-
-type MoveObjectEdge {
-  cursor: String
-  node: MoveObject!
-}
-
 # Event
 type EventConnection {
   edges: [EventEdge!]!
@@ -1292,8 +1275,8 @@ type AddressMetricEdge {
 }
 
 # StakeConnection
-type StakedSuiConnection {
-  edges: [StakedSuiEdge!]!
+type StakeConnection {
+  edges: [StakeEdge!]!
   pageInfo: PageInfo!
 }
 

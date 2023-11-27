@@ -6,7 +6,7 @@ import { useFormatCoin, useResolveSuiNSName } from '@mysten/core';
 import { useSuiClientQuery } from '@mysten/dapp-kit';
 import { CheckFill16 } from '@mysten/icons';
 import { formatAddress, SUI_TYPE_ARG } from '@mysten/sui.js/utils';
-import cl from 'clsx';
+import cl from 'classnames';
 
 import { useCoinsReFetchingConfig } from '../../hooks';
 

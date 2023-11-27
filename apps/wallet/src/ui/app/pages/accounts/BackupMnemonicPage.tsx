@@ -19,7 +19,7 @@ export function BackupMnemonicPage() {
 	const [passwordCopied, setPasswordCopied] = useState(false);
 	const { state } = useLocation();
 	const { accountSourceID } = useParams();
-	const { data: accountSources, isPending } = useAccountSources();
+	const { data: accountSources, isLoading } = useAccountSources();
 	const selectedSource = useMemo(
 		() => accountSources?.find(({ id }) => accountSourceID === id),
 		[accountSources, accountSourceID],
@@ -47,11 +47,11 @@ export function BackupMnemonicPage() {
 		}
 	}, [requirePassword, passwordConfirmed, showPasswordDialog]);
 	const navigate = useNavigate();
-	if (!isPending && selectedSource?.type !== 'mnemonic') {
+	if (!isLoading && selectedSource?.type !== 'mnemonic') {
 		return <Navigate to="/" replace />;
 	}
 	return (
-		<Loading loading={isPending}>
+		<Loading loading={isLoading}>
 			{showPasswordDialog ? (
 				<CardLayout>
 					<VerifyPasswordModal
@@ -86,7 +86,7 @@ export function BackupMnemonicPage() {
 									Your recovery phrase makes it easy to back up and restore your account.
 								</Text>
 							</div>
-							<Loading loading={passphraseMutation.isPending}>
+							<Loading loading={passphraseMutation.isLoading}>
 								{passphraseMutation.data ? (
 									<HideShowDisplayBox value={passphraseMutation.data} hideCopy />
 								) : (

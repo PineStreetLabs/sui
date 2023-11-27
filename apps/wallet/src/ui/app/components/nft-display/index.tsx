@@ -6,7 +6,6 @@ import Loading from '_components/loading';
 import { NftImage, type NftImageProps } from '_components/nft-display/NftImage';
 import { useFileExtensionType, useGetNFTMeta } from '_hooks';
 import { isKioskOwnerToken, useGetObject } from '@mysten/core';
-import { useKioskClient } from '@mysten/core/src/hooks/useKioskClient';
 import { formatAddress } from '@mysten/sui.js/utils';
 import { cva } from 'class-variance-authority';
 import type { VariantProps } from 'class-variance-authority';
@@ -56,18 +55,17 @@ export function NFTDisplayCard({
 	isLocked,
 }: NFTDisplayCardProps) {
 	const { data: objectData } = useGetObject(objectId);
-	const { data: nftMeta, isPending } = useGetNFTMeta(objectId);
+	const { data: nftMeta, isLoading } = useGetNFTMeta(objectId);
 	const nftName = nftMeta?.name || formatAddress(objectId);
 	const nftImageUrl = nftMeta?.imageUrl || '';
 	const video = useResolveVideo(objectData);
 	const fileExtensionType = useFileExtensionType(nftImageUrl);
-	const kioskClient = useKioskClient();
-	const isOwnerToken = isKioskOwnerToken(kioskClient.network, objectData);
+	const isOwnerToken = isKioskOwnerToken(objectData);
 	const shouldShowLabel = !wideView && orientation !== 'horizontal';
 
 	return (
 		<div className={nftDisplayCardStyles({ animateHover, wideView, orientation })}>
-			<Loading loading={isPending}>
+			<Loading loading={isLoading}>
 				{objectData?.data && isOwnerToken ? (
 					<Kiosk
 						object={objectData}

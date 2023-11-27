@@ -34,7 +34,7 @@ function MenuList() {
 					icon={<LockLocked24 />}
 					title="Auto-lock Accounts"
 					subtitle={
-						<Loading loading={autoLockInterval?.isPending}>
+						<Loading loading={autoLockInterval?.isLoading}>
 							{autoLockInterval.data === null ? 'Not set up' : null}
 							{typeof autoLockInterval.data === 'number'
 								? formatAutoLock(autoLockInterval.data)

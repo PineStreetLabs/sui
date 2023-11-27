@@ -22,15 +22,15 @@ const Tab = (props: TabProps<'div'>) => (
 );
 
 export function TransactionDetails({ sender, transaction }: Props) {
-	const { data: transactionData, isPending, isError } = useTransactionData(sender, transaction);
+	const { data: transactionData, isLoading, isError } = useTransactionData(sender, transaction);
 	if (transactionData?.transactions.length === 0 && transactionData.inputs.length === 0) {
 		return null;
 	}
 	return (
 		<SummaryCard header="Transaction Details" initialExpanded>
-			{isPending || isError ? (
+			{isLoading || isError ? (
 				<div className="ml-0 text-steel-darker text-pBodySmall font-medium">
-					{isPending ? 'Gathering data...' : "Couldn't gather data"}
+					{isLoading ? 'Gathering data...' : "Couldn't gather data"}
 				</div>
 			) : transactionData ? (
 				<div>

@@ -7,17 +7,24 @@ pub use checked::*;
 
 #[sui_macros::with_checked_arithmetic]
 mod checked {
-    use std::collections::{BTreeMap, HashSet};
+    use once_cell::sync::OnceCell;
+    use std::collections::{BTreeMap, HashMap, HashSet};
     use std::sync::Arc;
+    use sui_config::transaction_deny_config::TransactionDenyConfig;
     use sui_protocol_config::ProtocolConfig;
-    use sui_types::base_types::ObjectRef;
+    use sui_types::base_types::{ObjectID, ObjectRef};
+    use sui_types::committee::EpochId;
+    use sui_types::digests::TransactionDigest;
     use sui_types::error::{UserInputError, UserInputResult};
     use sui_types::executable_transaction::VerifiedExecutableTransaction;
     use sui_types::metrics::BytecodeVerifierMetrics;
+    use sui_types::signature::GenericSignature;
+    use sui_types::storage::ObjectStore;
+    use sui_types::storage::ReceivedMarkerQuery;
+    use sui_types::storage::{BackingPackageStore, GetSharedLocks};
     use sui_types::transaction::{
-        CheckedInputObjects, InputObjectKind, InputObjects, ObjectReadResult, ObjectReadResultKind,
-        ReceivingObjectReadResult, ReceivingObjects, TransactionData, TransactionDataAPI,
-        TransactionKind, VersionedProtocolMessage,
+        InputObjectKind, InputObjects, TransactionData, TransactionDataAPI, TransactionKind,
+        VersionedProtocolMessage,
     };
     use sui_types::{
         base_types::{SequenceNumber, SuiAddress},
@@ -28,27 +35,16 @@ mod checked {
     };
     use sui_types::{
         SUI_AUTHENTICATOR_STATE_OBJECT_ID, SUI_CLOCK_OBJECT_ID, SUI_CLOCK_OBJECT_SHARED_VERSION,
-        SUI_RANDOMNESS_STATE_OBJECT_ID,
     };
     use tracing::error;
     use tracing::instrument;
-
-    trait IntoChecked {
-        fn into_checked(self) -> CheckedInputObjects;
-    }
-
-    impl IntoChecked for InputObjects {
-        fn into_checked(self) -> CheckedInputObjects {
-            CheckedInputObjects::new_with_checked_transaction_inputs(self)
-        }
-    }
 
     // Entry point for all checks related to gas.
     // Called on both signing and execution.
     // On success the gas part of the transaction (gas data and gas coins)
     // is verified and good to go
     pub fn get_gas_status(
-        objects: &InputObjects,
+        objects: &[Object],
         gas: &[ObjectRef],
         protocol_config: &ProtocolConfig,
         reference_gas_price: u64,
@@ -66,68 +62,97 @@ mod checked {
     }
 
     #[instrument(level = "trace", skip_all)]
-    pub fn check_transaction_input(
+    pub fn check_transaction_input<S: BackingPackageStore + ObjectStore + ReceivedMarkerQuery>(
+        store: &S,
         protocol_config: &ProtocolConfig,
         reference_gas_price: u64,
+        epoch_id: EpochId,
         transaction: &TransactionData,
-        input_objects: InputObjects,
-        receiving_objects: ReceivingObjects,
+        tx_signatures: &[GenericSignature],
+        transaction_deny_config: &TransactionDenyConfig,
         metrics: &Arc<BytecodeVerifierMetrics>,
-    ) -> SuiResult<(SuiGasStatus, CheckedInputObjects)> {
+    ) -> SuiResult<(SuiGasStatus, InputObjects)> {
         transaction.check_version_supported(protocol_config)?;
         transaction.validity_check(protocol_config)?;
+        let receiving_objects = transaction.receiving_objects();
+        let input_objects = transaction.input_objects()?;
+        crate::deny::check_transaction_for_signing(
+            transaction,
+            tx_signatures,
+            &input_objects,
+            &receiving_objects,
+            transaction_deny_config,
+            &store,
+        )?;
+
         // Runs verifier, which could be expensive.
         check_non_system_packages_to_be_published(transaction, protocol_config, metrics)?;
 
-        check_input_objects(&input_objects, protocol_config)?;
+        let objects = check_input_objects(store, &input_objects, protocol_config)?;
         let gas_status = get_gas_status(
-            &input_objects,
+            &objects,
             transaction.gas(),
             protocol_config,
             reference_gas_price,
             transaction,
         )?;
-        check_objects(transaction, &input_objects)?;
-        check_receiving_objects(&input_objects, &receiving_objects)?;
-        Ok((gas_status, input_objects.into_checked()))
+        let input_objects = check_objects(transaction, input_objects, objects)?;
+        check_receiving_objects(
+            store,
+            &receiving_objects,
+            &input_objects,
+            protocol_config,
+            epoch_id,
+        )?;
+        Ok((gas_status, input_objects))
     }
 
-    pub fn check_transaction_input_with_given_gas(
+    pub fn check_transaction_input_with_given_gas<S: ObjectStore + ReceivedMarkerQuery>(
+        store: &S,
         protocol_config: &ProtocolConfig,
         reference_gas_price: u64,
+        epoch_id: EpochId,
         transaction: &TransactionData,
-        mut input_objects: InputObjects,
-        receiving_objects: ReceivingObjects,
         gas_object: Object,
         metrics: &Arc<BytecodeVerifierMetrics>,
-    ) -> SuiResult<(SuiGasStatus, CheckedInputObjects)> {
+    ) -> SuiResult<(SuiGasStatus, InputObjects)> {
         transaction.check_version_supported(protocol_config)?;
         transaction.validity_check_no_gas_check(protocol_config)?;
         check_non_system_packages_to_be_published(transaction, protocol_config, metrics)?;
-        check_input_objects(&input_objects, protocol_config)?;
+        let receiving_objects = transaction.receiving_objects();
+        let mut input_objects = transaction.input_objects()?;
+        let mut objects = check_input_objects(store, &input_objects, protocol_config)?;
 
         let gas_object_ref = gas_object.compute_object_reference();
-        input_objects.push(ObjectReadResult::new_from_gas_object(&gas_object));
+        input_objects.push(InputObjectKind::ImmOrOwnedMoveObject(gas_object_ref));
+        objects.push(gas_object);
 
         let gas_status = get_gas_status(
-            &input_objects,
+            &objects,
             &[gas_object_ref],
             protocol_config,
             reference_gas_price,
             transaction,
         )?;
-        check_objects(transaction, &input_objects)?;
-        check_receiving_objects(&input_objects, &receiving_objects)?;
-        Ok((gas_status, input_objects.into_checked()))
+        let input_objects = check_objects(transaction, input_objects, objects)?;
+        check_receiving_objects(
+            store,
+            &receiving_objects,
+            &input_objects,
+            protocol_config,
+            epoch_id,
+        )?;
+        Ok((gas_status, input_objects))
     }
 
     #[instrument(level = "trace", skip_all)]
-    pub fn check_certificate_input(
+    pub fn check_certificate_input<S: ObjectStore, G: GetSharedLocks>(
+        store: &S,
+        shared_lock_store: &G,
         cert: &VerifiedExecutableTransaction,
-        input_objects: InputObjects,
         protocol_config: &ProtocolConfig,
         reference_gas_price: u64,
-    ) -> SuiResult<(SuiGasStatus, CheckedInputObjects)> {
+    ) -> SuiResult<(SuiGasStatus, InputObjects)> {
         // This should not happen - validators should not have signed the txn in the first place.
         assert!(
             cert.data()
@@ -139,30 +164,39 @@ mod checked {
         );
 
         let tx_data = &cert.data().intent_message().value;
-
-        check_input_objects(&input_objects, protocol_config)?;
+        let input_object_kinds = tx_data.input_objects()?;
+        let input_object_data = if tx_data.is_end_of_epoch_tx() {
+            // When changing the epoch, we update a the system object, which is shared, without going
+            // through sequencing, so we must bypass the sequence checks here.
+            check_input_objects(store, &input_object_kinds, protocol_config)?
+        } else {
+            check_sequenced_input_objects(
+                store,
+                cert.digest(),
+                &input_object_kinds,
+                shared_lock_store,
+            )?
+        };
         let gas_status = get_gas_status(
-            &input_objects,
+            &input_object_data,
             tx_data.gas(),
             protocol_config,
             reference_gas_price,
             tx_data,
         )?;
-        check_objects(tx_data, &input_objects)?;
+        let input_objects = check_objects(tx_data, input_object_kinds, input_object_data)?;
         // NB: We do not check receiving objects when executing. Only at signing time do we check.
-        Ok((gas_status, input_objects.into_checked()))
+        Ok((gas_status, input_objects))
     }
 
     /// WARNING! This should only be used for the dev-inspect transaction. This transaction type
     /// bypasses many of the normal object checks
-    pub fn check_dev_inspect_input(
+    pub fn check_dev_inspect_input<S: ObjectStore>(
+        store: &S,
         config: &ProtocolConfig,
         kind: &TransactionKind,
-        mut input_objects: InputObjects,
-        // TODO: check ReceivingObjects for dev inspect?
-        _receiving_objects: ReceivingObjects,
         gas_object: Object,
-    ) -> SuiResult<(ObjectRef, CheckedInputObjects)> {
+    ) -> SuiResult<(ObjectRef, InputObjects)> {
         let gas_object_ref = gas_object.compute_object_reference();
         kind.validity_check(config)?;
         if kind.is_system_tx() {
@@ -172,14 +206,10 @@ mod checked {
             ))
             .into());
         }
-        check_input_objects(&input_objects, config)?;
+        let mut input_objects = kind.input_objects()?;
+        let mut objects = check_input_objects(store, &input_objects, config)?;
         let mut used_objects: HashSet<SuiAddress> = HashSet::new();
-        for input_object in input_objects.iter() {
-            let Some(object) = input_object.as_object() else {
-                // object was deleted
-                continue;
-            };
-
+        for object in &objects {
             if !object.is_immutable() {
                 fp_ensure!(
                     used_objects.insert(object.id().into()),
@@ -190,19 +220,31 @@ mod checked {
                 );
             }
         }
-
-        input_objects.push(ObjectReadResult::new(
-            InputObjectKind::ImmOrOwnedMoveObject(gas_object_ref),
-            gas_object.into(),
-        ));
-
-        Ok((gas_object_ref, input_objects.into_checked()))
+        input_objects.push(InputObjectKind::ImmOrOwnedMoveObject(gas_object_ref));
+        objects.push(gas_object);
+        let input_objects = InputObjects::new(input_objects.into_iter().zip(objects).collect());
+        Ok((gas_object_ref, input_objects))
     }
 
-    fn check_receiving_objects(
+    fn check_receiving_objects<S: ObjectStore + ReceivedMarkerQuery>(
+        store: &S,
+        receiving_objects: &[ObjectRef],
         input_objects: &InputObjects,
-        receiving_objects: &ReceivingObjects,
+        protocol_config: &ProtocolConfig,
+        epoch_id: EpochId,
     ) -> Result<(), SuiError> {
+        // Count receiving objects towards the input object limit as they are passed in the PTB
+        // args and they will (most likely) incur an object load at runtime.
+        fp_ensure!(
+            receiving_objects.len() + input_objects.len()
+                <= protocol_config.max_input_objects() as usize,
+            UserInputError::SizeLimitExceeded {
+                limit: "maximum input and receiving objects in a transaction".to_string(),
+                value: protocol_config.max_input_objects().to_string()
+            }
+            .into()
+        );
+
         let mut objects_in_txn: HashSet<_> = input_objects
             .object_kinds()
             .map(|x| x.object_id())
@@ -215,25 +257,32 @@ mod checked {
         //
         // If there are any object IDs in common (either between receiving objects and input
         // objects) we return an error.
-        for ReceivingObjectReadResult {
-            object_ref: (object_id, version, object_digest),
-            object,
-        } in receiving_objects.iter()
-        {
+        for (object_id, version, object_digest) in receiving_objects {
             fp_ensure!(
                 *version < SequenceNumber::MAX,
                 UserInputError::InvalidSequenceNumber.into()
             );
 
-            let Some(object) = object.as_object() else {
-                // object was previously received
-                continue;
-            };
+            let object = store.get_object(object_id)?;
 
-            if !(object.owner.is_address_owned()
-                && object.version() == *version
-                && object.digest() == *object_digest)
+            if !object.as_ref().is_some_and(|x| {
+                x.owner.is_address_owned()
+                    && x.version() == *version
+                    && x.digest() == *object_digest
+            }) && !store.have_received_object_at_version(object_id, *version, epoch_id)?
             {
+                // Unable to load object
+                fp_ensure!(
+                    object.is_some(),
+                    UserInputError::ObjectNotFound {
+                        object_id: *object_id,
+                        version: Some(*version),
+                    }
+                    .into()
+                );
+
+                let object = object.expect("Safe to unwrap due to check in fp_unwrap");
+
                 // Version mismatch
                 fp_ensure!(
                     object.version() == *version,
@@ -307,10 +356,13 @@ mod checked {
         Ok(())
     }
 
-    pub fn check_input_objects(
-        objects: &InputObjects,
+    pub fn check_input_objects<S: ObjectStore>(
+        object_store: &S,
+        objects: &[InputObjectKind],
         protocol_config: &ProtocolConfig,
-    ) -> SuiResult {
+    ) -> Result<Vec<Object>, SuiError> {
+        let mut result = Vec::new();
+
         fp_ensure!(
             objects.len() <= protocol_config.max_input_objects() as usize,
             UserInputError::SizeLimitExceeded {
@@ -320,14 +372,75 @@ mod checked {
             .into()
         );
 
-        Ok(())
+        for kind in objects {
+            let obj = match kind {
+                InputObjectKind::MovePackage(id) | InputObjectKind::SharedMoveObject { id, .. } => {
+                    object_store.get_object(id)?
+                }
+                InputObjectKind::ImmOrOwnedMoveObject(objref) => {
+                    object_store.get_object_by_key(&objref.0, objref.1)?
+                }
+            }
+            .ok_or_else(|| SuiError::from(kind.object_not_found_error()))?;
+            result.push(obj);
+        }
+        Ok(result)
+    }
+
+    /// When making changes, please see if get_input_object_keys() above needs
+    /// similar changes as well.
+    ///
+    /// Before this function is invoked, TransactionManager must ensure all depended
+    /// objects are present. Thus any missing object will panic.
+    fn check_sequenced_input_objects<S: ObjectStore, G: GetSharedLocks>(
+        store: &S,
+        digest: &TransactionDigest,
+        objects: &[InputObjectKind],
+        shared_locks_store: &G,
+    ) -> Result<Vec<Object>, SuiError> {
+        let shared_locks_cell: OnceCell<HashMap<_, _>> = OnceCell::new();
+
+        let mut result = Vec::new();
+        for kind in objects {
+            let obj = match kind {
+                InputObjectKind::SharedMoveObject { id, .. } => {
+                    let shared_locks = shared_locks_cell.get_or_try_init(|| {
+                        Ok::<HashMap<ObjectID, SequenceNumber>, SuiError>(
+                            shared_locks_store.get_shared_locks(digest)?.into_iter().collect(),
+                        )
+                    })?;
+                    // If we can't find the locked version, it means
+                    // 1. either we have a bug that skips shared object version assignment
+                    // 2. or we have some DB corruption
+                    let version = shared_locks.get(id).unwrap_or_else(|| {
+                        panic!(
+                            "Shared object locks should have been set. tx_digset: {:?}, obj id: {:?}",
+                            digest, id
+                        )
+                    });
+                    store.get_object_by_key(id, *version)?.unwrap_or_else(|| {
+                        panic!("All dependencies of tx {:?} should have been executed now, but Shared Object id: {}, version: {} is absent", digest, *id, *version);
+                    })
+                }
+                InputObjectKind::MovePackage(id) => store.get_object(id)?.unwrap_or_else(|| {
+                    panic!("All dependencies of tx {:?} should have been executed now, but Move Package id: {} is absent", digest, id);
+                }),
+                InputObjectKind::ImmOrOwnedMoveObject(objref) => {
+                    store.get_object_by_key(&objref.0, objref.1)?.unwrap_or_else(|| {
+                        panic!("All dependencies of tx {:?} should have been executed now, but Immutable or Owned Object id: {}, version: {} is absent", digest, objref.0, objref.1);
+                    })
+                }
+            };
+            result.push(obj);
+        }
+        Ok(result)
     }
 
     /// Check transaction gas data/info and gas coins consistency.
     /// Return the gas status to be used for the lifecycle of the transaction.
     #[instrument(level = "trace", skip_all)]
     fn check_gas(
-        objects: &InputObjects,
+        objects: &[Object],
         protocol_config: &ProtocolConfig,
         reference_gas_price: u64,
         gas: &[ObjectRef],
@@ -361,12 +474,15 @@ mod checked {
     /// Check all the objects used in the transaction against the database, and ensure
     /// that they are all the correct version and number.
     #[instrument(level = "trace", skip_all)]
-    fn check_objects(transaction: &TransactionData, objects: &InputObjects) -> UserInputResult<()> {
+    pub fn check_objects(
+        transaction: &TransactionData,
+        input_objects: Vec<InputObjectKind>,
+        objects: Vec<Object>,
+    ) -> UserInputResult<InputObjects> {
         // We require that mutable objects cannot show up more than once.
         let mut used_objects: HashSet<SuiAddress> = HashSet::new();
-        let mut deleted_shared_objects = Vec::new();
         for object in objects.iter() {
-            if object.is_mutable() {
+            if !object.is_immutable() {
                 fp_ensure!(
                     used_objects.insert(object.id().into()),
                     UserInputError::MutableObjectUsedMoreThanOnce {
@@ -376,49 +492,32 @@ mod checked {
             }
         }
 
-        if !transaction.is_genesis_tx() && objects.is_empty() {
+        // Gather all objects and errors.
+        let mut all_objects = Vec::with_capacity(input_objects.len());
+
+        for (object_kind, object) in input_objects.into_iter().zip(objects) {
+            // For Gas Object, we check the object is owned by gas owner
+            // TODO: this is a quadratic check and though limits are low we should do it differently
+            let owner_address = if transaction
+                .gas()
+                .iter()
+                .any(|obj_ref| *obj_ref.0 == *object.id())
+            {
+                transaction.gas_owner()
+            } else {
+                transaction.sender()
+            };
+            // Check if the object contents match the type of lock we need for
+            // this object.
+            let system_transaction = transaction.is_system_tx();
+            check_one_object(&owner_address, object_kind, &object, system_transaction)?;
+            all_objects.push((object_kind, object));
+        }
+        if !transaction.is_genesis_tx() && all_objects.is_empty() {
             return Err(UserInputError::ObjectInputArityViolation);
         }
 
-        for object in objects.iter() {
-            let input_object_kind = object.input_object_kind;
-
-            match &object.object {
-                ObjectReadResultKind::Object(object) => {
-                    // For Gas Object, we check the object is owned by gas owner
-                    // TODO: this is a quadratic check and though limits are low we should do it differently
-                    let owner_address = if transaction
-                        .gas()
-                        .iter()
-                        .any(|obj_ref| *obj_ref.0 == *object.id())
-                    {
-                        transaction.gas_owner()
-                    } else {
-                        transaction.sender()
-                    };
-                    // Check if the object contents match the type of lock we need for
-                    // this object.
-                    let system_transaction = transaction.is_system_tx();
-                    check_one_object(
-                        &owner_address,
-                        input_object_kind,
-                        object,
-                        system_transaction,
-                    )?;
-                }
-                // We skip checking a deleted shared object because it no longer exists
-                ObjectReadResultKind::DeletedSharedObject(seq, digest) => {
-                    deleted_shared_objects.push((
-                        input_object_kind.object_id(),
-                        *seq,
-                        input_object_kind.is_mutable(),
-                        *digest,
-                    ));
-                }
-            }
-        }
-
-        Ok(())
+        Ok(InputObjects::new(all_objects))
     }
 
     /// Check one object against a reference
@@ -517,21 +616,6 @@ mod checked {
                 } else {
                     return Err(UserInputError::InaccessibleSystemObject {
                         object_id: SUI_AUTHENTICATOR_STATE_OBJECT_ID,
-                    });
-                }
-            }
-            InputObjectKind::SharedMoveObject {
-                id: SUI_RANDOMNESS_STATE_OBJECT_ID,
-                mutable: true,
-                ..
-            } => {
-                // Only system transactions can accept the Random
-                // object as a mutable parameter.
-                if system_transaction {
-                    return Ok(());
-                } else {
-                    return Err(UserInputError::ImmutableParameterExpectedError {
-                        object_id: SUI_RANDOMNESS_STATE_OBJECT_ID,
                     });
                 }
             }

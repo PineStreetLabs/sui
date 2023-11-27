@@ -23,13 +23,12 @@ pub const PUBLIC_TRANSFER_FUNCTIONS: &[&IdentStr] = &[
     ident_str!("public_transfer"),
     ident_str!("public_freeze_object"),
     ident_str!("public_share_object"),
-    ident_str!("public_receive"),
+    ident_str!("receive"),
 ];
 pub const PRIVATE_TRANSFER_FUNCTIONS: &[&IdentStr] = &[
     ident_str!("transfer"),
     ident_str!("freeze_object"),
     ident_str!("share_object"),
-    ident_str!("receive"),
 ];
 pub const TRANSFER_IMPL_FUNCTIONS: &[&IdentStr] = &[
     ident_str!("transfer_impl"),

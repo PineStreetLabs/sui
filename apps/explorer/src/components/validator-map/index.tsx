@@ -44,7 +44,7 @@ export default function ValidatorMap({ minHeight }: Props) {
 
 	const { request } = useAppsBackend();
 
-	const { data, isPending, isError } = useQuery({
+	const { data, isLoading, isError } = useQuery({
 		queryKey: ['validator-map'],
 		queryFn: () =>
 			request<ValidatorMapResponse>('validator-map', {
@@ -122,7 +122,7 @@ export default function ValidatorMap({ minHeight }: Props) {
 					<div className="flex flex-col gap-2">
 						<Text variant="caption/medium" color="steel-darker">
 							Countries
-							{isPending && <Placeholder width="60px" height="0.8em" />}
+							{isLoading && <Placeholder width="60px" height="0.8em" />}
 						</Text>
 						<Text variant="body/bold" color="steel-darker">
 							{(!isError && countryCount && numberFormatter.format(countryCount)) || '--'}
@@ -131,7 +131,7 @@ export default function ValidatorMap({ minHeight }: Props) {
 
 					<div className="flex gap-6">
 						<NodeStat title="Validators">
-							{isPending && <Placeholder width="60px" height="0.8em" />}
+							{isLoading && <Placeholder width="60px" height="0.8em" />}
 							{
 								// Fetch received response with no errors and the value was not null
 								(!systemStateError &&
@@ -143,7 +143,7 @@ export default function ValidatorMap({ minHeight }: Props) {
 
 						{network === Network.MAINNET && (
 							<NodeStat title="Nodes">
-								{isPending && <Placeholder width="60px" height="0.8em" />}
+								{isLoading && <Placeholder width="60px" height="0.8em" />}
 								{(data?.nodeCount && numberFormatter.format(data?.nodeCount)) || '--'}
 							</NodeStat>
 						)}

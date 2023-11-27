@@ -6,7 +6,7 @@ import { Text } from '_app/shared/text';
 import { Badge } from '_src/ui/app/shared/Badge';
 import { useSuiClientQuery } from '@mysten/dapp-kit';
 import { formatAddress } from '@mysten/sui.js/utils';
-import cl from 'clsx';
+import cl from 'classnames';
 import { useMemo } from 'react';
 
 interface ValidatorLogoProps {
@@ -30,7 +30,7 @@ export function ValidatorLogo({
 	showActiveStatus = false,
 	activeEpoch,
 }: ValidatorLogoProps) {
-	const { data, isPending } = useSuiClientQuery('getLatestSuiSystemState');
+	const { data, isLoading } = useSuiClientQuery('getLatestSuiSystemState');
 
 	const validatorMeta = useMemo(() => {
 		if (!data) return null;
@@ -50,7 +50,7 @@ export function ValidatorLogo({
 	// flag if the validator is at risk of being removed from the active set
 	const isAtRisk = data?.atRiskValidators.some((item) => item[0] === validatorAddress);
 
-	if (isPending) {
+	if (isLoading) {
 		return <div className="flex justify-center items-center">...</div>;
 	}
 	// for inactive validators, show the epoch number

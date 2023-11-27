@@ -27,7 +27,7 @@ export function OwnedCoins({ id }: { id: string }) {
 	const [currentSlice, setCurrentSlice] = useState(1);
 	const [limit, setLimit] = useState(20);
 	const [filterValue, setFilterValue] = useState(COIN_FILTERS.RECOGNIZED);
-	const { isPending, data, isError } = useSuiClientQuery('getAllBalances', {
+	const { isLoading, data, isError } = useSuiClientQuery('getAllBalances', {
 		owner: normalizeSuiAddress(id),
 	});
 	const recognizedPackages = useRecognizedPackages();
@@ -97,7 +97,7 @@ export function OwnedCoins({ id }: { id: string }) {
 
 	return (
 		<div className="h-full w-full md:pr-10">
-			{isPending ? (
+			{isLoading ? (
 				<div className="m-auto flex h-full w-full justify-center text-white">
 					<LoadingIndicator />
 				</div>

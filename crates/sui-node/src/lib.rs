@@ -1,7 +1,7 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -23,12 +23,11 @@ use fastcrypto_zkp::bn254::zk_login::OIDCProvider;
 use futures::TryFutureExt;
 use prometheus::Registry;
 use sui_core::authority::CHAIN_IDENTIFIER;
-use sui_core::consensus_adapter::{LazyNarwhalClient, SubmitToConsensus};
+use sui_core::consensus_adapter::LazyNarwhalClient;
 use sui_json_rpc::api::JsonRpcMetrics;
 use sui_types::authenticator_state::get_authenticator_state_obj_initial_shared_version;
 use sui_types::digests::ChainIdentifier;
 use sui_types::message_envelope::get_google_jwk_bytes;
-use sui_types::randomness_state::get_randomness_state_obj_initial_shared_version;
 use sui_types::sui_system_state::SuiSystemState;
 use tap::tap::TapFallible;
 use tokio::runtime::Handle;
@@ -49,7 +48,7 @@ use narwhal_network::metrics::MetricsMakeCallbackHandler;
 use narwhal_network::metrics::{NetworkConnectionMetrics, NetworkMetrics};
 use sui_archival::reader::ArchiveReaderBalancer;
 use sui_archival::writer::ArchiveWriter;
-use sui_config::node::{ConsensusProtocol, DBCheckpointConfig};
+use sui_config::node::DBCheckpointConfig;
 use sui_config::node_config_metrics::NodeConfigMetrics;
 use sui_config::{ConsensusConfig, NodeConfig};
 use sui_core::authority::authority_per_epoch_store::AuthorityPerEpochStore;
@@ -66,7 +65,7 @@ use sui_core::checkpoints::{
 use sui_core::consensus_adapter::{
     CheckConnection, ConnectionMonitorStatus, ConsensusAdapter, ConsensusAdapterMetrics,
 };
-use sui_core::consensus_manager::{ConsensusManager, ConsensusManagerTrait};
+use sui_core::consensus_handler::ConsensusHandler;
 use sui_core::consensus_throughput_calculator::{
     ConsensusThroughputCalculator, ConsensusThroughputProfiler, ThroughputProfileRanges,
 };
@@ -77,6 +76,7 @@ use sui_core::epoch::data_removal::EpochDataRemover;
 use sui_core::epoch::epoch_metrics::EpochMetrics;
 use sui_core::epoch::reconfiguration::ReconfigurationInitiator;
 use sui_core::module_cache_metrics::ResolverMetrics;
+use sui_core::narwhal_manager::{NarwhalConfiguration, NarwhalManager, NarwhalManagerMetrics};
 use sui_core::signature_verifier::SignatureVerifierMetrics;
 use sui_core::state_accumulator::StateAccumulator;
 use sui_core::storage::RocksDbStore;
@@ -130,8 +130,8 @@ pub mod metrics;
 
 pub struct ValidatorComponents {
     validator_server_handle: JoinHandle<Result<()>>,
-    consensus_manager: ConsensusManager,
-    consensus_epoch_data_remover: EpochDataRemover,
+    narwhal_manager: NarwhalManager,
+    narwhal_epoch_data_remover: EpochDataRemover,
     consensus_adapter: Arc<ConsensusAdapter>,
     // dropping this will eventually stop checkpoint tasks. The receiver side of this channel
     // is copied into each checkpoint service task, and they are listening to any change to this
@@ -197,8 +197,6 @@ use simulator::*;
 
 #[cfg(msim)]
 pub use simulator::set_jwk_injector;
-use sui_core::consensus_handler::ConsensusHandlerInitializer;
-use sui_core::mysticeti_adapter::LazyMysticetiClient;
 
 pub struct SuiNode {
     config: NodeConfig,
@@ -260,11 +258,9 @@ impl SuiNode {
         consensus_adapter: Arc<ConsensusAdapter>,
     ) {
         let epoch = epoch_store.epoch();
-
-        let supported_providers = config
-            .zklogin_oauth_providers
-            .get(&epoch_store.get_chain_identifier().chain())
-            .unwrap_or(&BTreeSet::new())
+        let supported_providers = epoch_store
+            .protocol_config()
+            .zklogin_supported_providers()
             .iter()
             .map(|s| OIDCProvider::from_str(s).expect("Invalid provider string"))
             .collect::<Vec<_>>();
@@ -342,7 +338,7 @@ impl SuiNode {
                         match Self::fetch_jwks(authority, &p).await {
                             Err(e) => {
                                 metrics.jwk_request_errors.with_label_values(&[&provider_str]).inc();
-                                warn!("Error when fetching JWK for provider {:?} {:?}", p, e);
+                                warn!("Error when fetching JWK {:?}", e);
                                 // Retry in 30 seconds
                                 tokio::time::sleep(Duration::from_secs(30)).await;
                                 continue;
@@ -564,14 +560,6 @@ impl SuiNode {
             state_snapshot_handle.is_some(),
         )?;
 
-        let mut pruning_config = config.authority_store_pruning_config;
-        if !epoch_store
-            .protocol_config()
-            .simplified_unwrap_then_delete()
-        {
-            pruning_config.set_enable_pruning_tombstones(false);
-        }
-
         let state = AuthorityState::new(
             config.protocol_public_key(),
             secret,
@@ -582,7 +570,7 @@ impl SuiNode {
             index_store.clone(),
             checkpoint_store.clone(),
             &prometheus_registry,
-            pruning_config,
+            config.authority_store_pruning_config,
             genesis.objects(),
             &db_checkpoint_config,
             config.expensive_safety_check_config.clone(),
@@ -590,7 +578,6 @@ impl SuiNode {
             config.certificate_deny_config.clone(),
             config.indirect_objects_threshold,
             config.state_debug_dump_config.clone(),
-            config.overload_threshold_config.clone(),
             archive_readers,
         )
         .await;
@@ -829,42 +816,24 @@ impl SuiNode {
         DBCheckpointConfig,
         Option<tokio::sync::broadcast::Sender<()>>,
     )> {
-        let checkpoint_path = Some(
-            config
-                .db_checkpoint_config
-                .checkpoint_path
-                .clone()
-                .unwrap_or_else(|| config.db_checkpoint_path()),
-        );
         let db_checkpoint_config = if config.db_checkpoint_config.checkpoint_path.is_none() {
             DBCheckpointConfig {
-                checkpoint_path,
-                perform_db_checkpoints_at_epoch_end: if state_snapshot_enabled {
-                    true
-                } else {
-                    config
-                        .db_checkpoint_config
-                        .perform_db_checkpoints_at_epoch_end
-                },
+                checkpoint_path: Some(config.db_checkpoint_path()),
                 ..config.db_checkpoint_config.clone()
             }
         } else {
             config.db_checkpoint_config.clone()
         };
 
-        match (
-            db_checkpoint_config.object_store_config.as_ref(),
-            state_snapshot_enabled,
-        ) {
-            // If db checkpoint config object store not specified but
-            // state snapshot object store is specified, create handler
-            // anyway for marking db checkpoints as completed so that they
-            // can be uploaded as state snapshots.
-            (None, false) => Ok((db_checkpoint_config, None)),
-            (_, _) => {
+        match db_checkpoint_config
+            .checkpoint_path
+            .as_ref()
+            .zip(db_checkpoint_config.object_store_config.as_ref())
+        {
+            Some((path, object_store_config)) => {
                 let handler = DBCheckpointHandler::new(
-                    &db_checkpoint_config.checkpoint_path.clone().unwrap(),
-                    db_checkpoint_config.object_store_config.as_ref(),
+                    path,
+                    object_store_config,
                     60,
                     db_checkpoint_config
                         .prune_and_compact_before_upload
@@ -879,6 +848,7 @@ impl SuiNode {
                     Some(DBCheckpointHandler::start(handler)),
                 ))
             }
+            None => Ok((db_checkpoint_config, None)),
         }
     }
 
@@ -1011,50 +981,21 @@ impl SuiNode {
             .consensus_config()
             .ok_or_else(|| anyhow!("Validator is missing consensus config"))?;
 
-        let (consensus_adapter, consensus_manager) = match consensus_config.protocol {
-            ConsensusProtocol::Narwhal => {
-                let consensus_adapter = Arc::new(Self::construct_consensus_adapter(
-                    &committee,
-                    consensus_config,
-                    state.name,
-                    connection_monitor_status.clone(),
-                    &registry_service.default_registry(),
-                    epoch_store.protocol_config().clone(),
-                    Arc::new(LazyNarwhalClient::new(
-                        consensus_config.address().to_owned(),
-                    )),
-                ));
-                let consensus_manager =
-                    ConsensusManager::new_narwhal(config, consensus_config, registry_service);
-                (consensus_adapter, consensus_manager)
-            }
-            ConsensusProtocol::Mysticeti => {
-                let client = Arc::new(LazyMysticetiClient::new());
+        let consensus_adapter = Arc::new(Self::construct_consensus_adapter(
+            &committee,
+            consensus_config,
+            state.name,
+            connection_monitor_status.clone(),
+            &registry_service.default_registry(),
+        ));
+        let narwhal_manager =
+            Self::construct_narwhal_manager(config, consensus_config, registry_service)?;
 
-                let consensus_adapter = Arc::new(Self::construct_consensus_adapter(
-                    &committee,
-                    consensus_config,
-                    state.name,
-                    connection_monitor_status.clone(),
-                    &registry_service.default_registry(),
-                    epoch_store.protocol_config().clone(),
-                    client.clone(),
-                ));
-                let consensus_manager = ConsensusManager::new_mysticeti(
-                    config,
-                    consensus_config,
-                    registry_service,
-                    client,
-                );
-                (consensus_adapter, consensus_manager)
-            }
-        };
-
-        let mut consensus_epoch_data_remover =
-            EpochDataRemover::new(consensus_manager.get_storage_base_path());
+        let mut narwhal_epoch_data_remover =
+            EpochDataRemover::new(narwhal_manager.get_storage_base_path());
 
         // This only gets started up once, not on every epoch. (Make call to remove every epoch.)
-        consensus_epoch_data_remover.run().await;
+        narwhal_epoch_data_remover.run().await;
 
         let checkpoint_metrics = CheckpointMetrics::new(&registry_service.default_registry());
         let sui_tx_validator_metrics =
@@ -1075,8 +1016,8 @@ impl SuiNode {
             checkpoint_store,
             epoch_store,
             state_sync_handle,
-            consensus_manager,
-            consensus_epoch_data_remover,
+            narwhal_manager,
+            narwhal_epoch_data_remover,
             accumulator,
             validator_server_handle,
             checkpoint_metrics,
@@ -1093,8 +1034,8 @@ impl SuiNode {
         checkpoint_store: Arc<CheckpointStore>,
         epoch_store: Arc<AuthorityPerEpochStore>,
         state_sync_handle: state_sync::Handle,
-        consensus_manager: ConsensusManager,
-        consensus_epoch_data_remover: EpochDataRemover,
+        narwhal_manager: NarwhalManager,
+        narwhal_epoch_data_remover: EpochDataRemover,
         accumulator: Arc<StateAccumulator>,
         validator_server_handle: JoinHandle<Result<()>>,
         checkpoint_metrics: Arc<CheckpointMetrics>,
@@ -1119,6 +1060,9 @@ impl SuiNode {
 
         consensus_adapter.swap_low_scoring_authorities(low_scoring_authorities.clone());
 
+        let new_epoch_start_state = epoch_store.epoch_start_state();
+        let committee = new_epoch_start_state.get_narwhal_committee();
+
         let throughput_calculator = Arc::new(ConsensusThroughputCalculator::new(
             None,
             state.metrics.clone(),
@@ -1129,23 +1073,37 @@ impl SuiNode {
             None,
             None,
             state.metrics.clone(),
-            ThroughputProfileRanges::from_chain(epoch_store.get_chain_identifier()),
+            ThroughputProfileRanges::default(), // TODO: move configuration to protocol-config and potentially differentiate for each environment.
         ));
 
         consensus_adapter.swap_throughput_profiler(throughput_profiler);
 
-        let consensus_handler_initializer = ConsensusHandlerInitializer::new(
-            state.clone(),
-            checkpoint_service.clone(),
-            epoch_store.clone(),
-            low_scoring_authorities,
-            throughput_calculator,
-        );
-
-        consensus_manager
-            .start(
-                config,
+        let consensus_handler_initializer = || {
+            ConsensusHandler::new(
                 epoch_store.clone(),
+                checkpoint_service.clone(),
+                state.transaction_manager().clone(),
+                state.db(),
+                low_scoring_authorities.clone(),
+                committee.clone(),
+                state.metrics.clone(),
+                throughput_calculator.clone(),
+            )
+        };
+
+        let transactions_addr = &config
+            .consensus_config
+            .as_ref()
+            .ok_or_else(|| anyhow!("Validator is missing consensus config"))?
+            .address;
+        let worker_cache = new_epoch_start_state.get_narwhal_worker_cache(transactions_addr);
+
+        narwhal_manager
+            .start(
+                new_epoch_start_state.get_narwhal_committee(),
+                epoch_store.get_chain_identifier(),
+                epoch_store.protocol_config().clone(),
+                worker_cache,
                 consensus_handler_initializer,
                 SuiTxValidator::new(
                     epoch_store.clone(),
@@ -1168,8 +1126,8 @@ impl SuiNode {
 
         Ok(ValidatorComponents {
             validator_server_handle,
-            consensus_manager,
-            consensus_epoch_data_remover,
+            narwhal_manager,
+            narwhal_epoch_data_remover,
             consensus_adapter,
             checkpoint_service_exit,
             checkpoint_metrics,
@@ -1225,28 +1183,46 @@ impl SuiNode {
         )
     }
 
+    fn construct_narwhal_manager(
+        config: &NodeConfig,
+        consensus_config: &ConsensusConfig,
+        registry_service: &RegistryService,
+    ) -> Result<NarwhalManager> {
+        let narwhal_config = NarwhalConfiguration {
+            primary_keypair: config.protocol_key_pair().copy(),
+            network_keypair: config.network_key_pair().copy(),
+            worker_ids_and_keypairs: vec![(0, config.worker_key_pair().copy())],
+            storage_base_path: consensus_config.db_path().to_path_buf(),
+            parameters: consensus_config.narwhal_config().to_owned(),
+            registry_service: registry_service.clone(),
+        };
+
+        let metrics = NarwhalManagerMetrics::new(&registry_service.default_registry());
+
+        Ok(NarwhalManager::new(narwhal_config, metrics))
+    }
+
     fn construct_consensus_adapter(
         committee: &Committee,
         consensus_config: &ConsensusConfig,
         authority: AuthorityName,
         connection_monitor_status: Arc<ConnectionMonitorStatus>,
         prometheus_registry: &Registry,
-        protocol_config: ProtocolConfig,
-        consensus_client: Arc<dyn SubmitToConsensus>,
     ) -> ConsensusAdapter {
         let ca_metrics = ConsensusAdapterMetrics::new(prometheus_registry);
         // The consensus adapter allows the authority to send user certificates through consensus.
 
         ConsensusAdapter::new(
-            consensus_client,
+            Box::new(LazyNarwhalClient::new(
+                consensus_config.address().to_owned(),
+            )),
             authority,
-            connection_monitor_status,
+            Box::new(connection_monitor_status),
             consensus_config.max_pending_transactions(),
             consensus_config.max_pending_transactions() * 2 / committee.num_members(),
             consensus_config.max_submit_position,
             consensus_config.submit_delay_step_override(),
             ca_metrics,
-            protocol_config,
         )
     }
 
@@ -1438,8 +1414,8 @@ impl SuiNode {
             // in the new epoch.
             let new_validator_components = if let Some(ValidatorComponents {
                 validator_server_handle,
-                consensus_manager,
-                consensus_epoch_data_remover,
+                narwhal_manager,
+                narwhal_epoch_data_remover,
                 consensus_adapter,
                 checkpoint_service_exit,
                 checkpoint_metrics,
@@ -1450,7 +1426,7 @@ impl SuiNode {
                 // Stop the old checkpoint service.
                 drop(checkpoint_service_exit);
 
-                consensus_manager.shutdown().await;
+                narwhal_manager.shutdown().await;
 
                 let new_epoch_store = self
                     .reconfigure_state(
@@ -1462,7 +1438,7 @@ impl SuiNode {
                     )
                     .await;
 
-                consensus_epoch_data_remover
+                narwhal_epoch_data_remover
                     .remove_old_data(next_epoch - 1)
                     .await;
 
@@ -1476,8 +1452,8 @@ impl SuiNode {
                             self.checkpoint_store.clone(),
                             new_epoch_store.clone(),
                             self.state_sync.clone(),
-                            consensus_manager,
-                            consensus_epoch_data_remover,
+                            narwhal_manager,
+                            narwhal_epoch_data_remover,
                             self.accumulator.clone(),
                             validator_server_handle,
                             checkpoint_metrics,
@@ -1563,15 +1539,11 @@ impl SuiNode {
         let authenticator_state_obj_initial_shared_version =
             get_authenticator_state_obj_initial_shared_version(&state.database)
                 .expect("read cannot fail");
-        let randomness_state_obj_initial_shared_version =
-            get_randomness_state_obj_initial_shared_version(&state.database)
-                .expect("read cannot fail");
 
         let epoch_start_configuration = EpochStartConfiguration::new(
             next_epoch_start_system_state,
             *last_checkpoint.digest(),
             authenticator_state_obj_initial_shared_version,
-            randomness_state_obj_initial_shared_version,
         );
 
         let new_epoch_store = self

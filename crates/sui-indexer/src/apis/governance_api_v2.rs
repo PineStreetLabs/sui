@@ -11,9 +11,7 @@ use cached::{proc_macro::cached, SizedCache};
 use sui_json_rpc::{
     api::GovernanceReadApiServer, governance_api::ValidatorExchangeRates, SuiRpcModule,
 };
-use sui_json_rpc_types::{
-    DelegatedStake, EpochInfo, StakeStatus, SuiCommittee, SuiObjectDataFilter, ValidatorApys,
-};
+use sui_json_rpc_types::{DelegatedStake, EpochInfo, StakeStatus, SuiCommittee, ValidatorApys};
 use sui_open_rpc::Module;
 use sui_types::{
     base_types::{MoveObjectType, ObjectID, SuiAddress},
@@ -24,7 +22,7 @@ use sui_types::{
 };
 
 #[derive(Clone)]
-pub struct GovernanceReadApiV2 {
+pub(crate) struct GovernanceReadApiV2 {
     inner: IndexerReader,
 }
 
@@ -76,9 +74,7 @@ impl GovernanceReadApiV2 {
             .inner
             .get_owned_objects_in_blocking_task(
                 owner,
-                Some(SuiObjectDataFilter::StructType(
-                    MoveObjectType::staked_sui().into(),
-                )),
+                Some(MoveObjectType::staked_sui().to_string()),
                 None,
                 // Allow querying for up to 1000 staked objects
                 1000,
@@ -93,7 +89,7 @@ impl GovernanceReadApiV2 {
         self.get_delegated_stakes(stakes).await
     }
 
-    pub async fn get_delegated_stakes(
+    async fn get_delegated_stakes(
         &self,
         stakes: Vec<StakedSui>,
     ) -> Result<Vec<DelegatedStake>, IndexerError> {

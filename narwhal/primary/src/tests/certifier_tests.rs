@@ -4,10 +4,12 @@
 use super::*;
 use crate::common::create_db_stores;
 
-use crate::{consensus::ConsensusRound, PrimaryChannelMetrics, NUM_SHUTDOWN_RECEIVERS};
+use crate::{primary, PrimaryChannelMetrics};
+use consensus::consensus::ConsensusRound;
 use crypto::KeyPair as DefinedKeyPair;
 use fastcrypto::traits::KeyPair;
 use network::client::NetworkClient;
+use primary::NUM_SHUTDOWN_RECEIVERS;
 use prometheus::Registry;
 use rand::{rngs::StdRng, SeedableRng};
 use std::num::NonZeroUsize;

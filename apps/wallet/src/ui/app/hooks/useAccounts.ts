@@ -12,7 +12,7 @@ export function useAccounts() {
 	return useQuery({
 		queryKey: accountsQueryKey,
 		queryFn: () => backgroundClient.getStoredEntities<SerializedUIAccount>('accounts'),
-		gcTime: 30 * 1000,
+		cacheTime: 30 * 1000,
 		staleTime: 15 * 1000,
 		refetchInterval: 30 * 1000,
 		meta: { skipPersistedCache: true },
