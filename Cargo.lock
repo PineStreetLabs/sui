@@ -6586,7 +6586,6 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "prost 0.12.1",
- "prost-build",
  "rand 0.8.5",
  "roaring",
  "rustversion",

@@ -15,13 +15,6 @@ fn main() -> Result<()> {
         PathBuf::from(env::var("OUT_DIR")?)
     };
 
-    let proto_files = &["proto/narwhal.proto"];
-    let dirs = &["proto"];
-
-    tonic_build::configure()
-        .out_dir(&out_dir)
-        .compile_with_config(config, proto_files, dirs)?;
-
     build_anemo_services(&out_dir);
 
     println!("cargo:rerun-if-changed=build.rs");
