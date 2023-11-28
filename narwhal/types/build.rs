@@ -18,10 +18,6 @@ fn main() -> Result<()> {
     let proto_files = &["proto/narwhal.proto"];
     let dirs = &["proto"];
 
-    // Use `Bytes` instead of `Vec<u8>` for bytes fields
-    let mut config = prost_build::Config::new();
-    config.bytes(["."]);
-
     tonic_build::configure()
         .out_dir(&out_dir)
         .compile_with_config(config, proto_files, dirs)?;
