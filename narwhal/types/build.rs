@@ -18,6 +18,25 @@ fn main() -> Result<()> {
     let proto_files = &["proto/narwhal.proto"];
     let dirs = &["proto"];
 
+    // TODO (Oren): remove this hack when possible
+    // Hack for bazel compilation within a genrule - for some reason when compiling a 
+    // rust_binary as a tool dependency of a genrule there is no way to set the PROTOC
+    // environment variables that I've found. rust_binary rustc_env doesn't work,
+    // nor do bazel command line defines or action_envs
+    if let Ok(paths) = env::var("PATH") {
+        for path in paths.split(':') {
+            let full_path = Path::new(path).join("protoc");
+
+            if std::fs::metadata(&full_path).is_ok() {
+                env::set_var("PROTOC", full_path.to_str().unwrap());
+                println!("PROTOC environment variable set to {:?}", full_path.to_str().unwrap());
+                break;
+            }
+        }
+    } else {
+        eprintln!("PATH environment variable not found, not setting PROTOC");
+    }
+
     // Use `Bytes` instead of `Vec<u8>` for bytes fields
     let mut config = prost_build::Config::new();
     config.bytes(["."]);
